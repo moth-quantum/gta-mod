@@ -11,10 +11,9 @@ Written 21 Oct 2026. GTA 6 ships 19 Nov 2026, so the attention window is about f
 
 ## 2. The constraints we start from
 
-- This Mac is an M1 Pro on macOS 14.5. No Windows, no Parallels, no CrossOver, no dotnet, no Wine. Every GTA modding toolchain is Windows-only. The game has to run on a Windows machine. Options, best first:
-  1. A Windows gaming PC you already own or can borrow. Claude Code installs natively on Windows.
-  2. A cloud Windows box with a GPU (Shadow PC, or an AWS g4dn/g5 instance with Parsec or Sunshine streaming). GTA V single player and San Andreas both run fine on these.
-  3. Parallels on this Mac. San Andreas (2005) runs acceptably in an ARM Windows VM. GTA V does not. Do not plan GTA V around this Mac.
+- This Mac is an M1 Pro on macOS 14.5. No Windows, Parallels, CrossOver, dotnet or Wine. Every GTA modding toolchain is Windows-only, so the game runs on a cloud Windows box.
+- **Decided 21 Oct: Paperspace CORE.** Recommended machine: **A4000 in AMS1** (16 GB VRAM, 8 vCPU, 45 GB RAM, $0.76/hr while on, needs the $8/mo Pro plan), 250 GB disk ($10/mo max), public IP ($3/mo max). RTX4000 ($0.56/hr, free plan) is enough for San Andreas alone. Stream with Parsec. Stop the machine when not playing; only storage and IP bill while it is off.
+- **Paperspace catch:** Windows templates are retired for accounts created after 1 July 2024. The Windows 10 / Parsec template only shows up for older accounts. If it is missing in the console, Paperspace cannot host this and the fallback is Shadow PC (consumer Windows gaming box, flat monthly) or an AWS g4dn.xlarge Windows instance with Parsec.
 - Rockstar's modding policy: single player only, non-commercial, no redistribution of Rockstar assets. Never load a script hook with GTA Online. A free mod plus a video is squarely inside the policy.
 - The Moth side (from the 19 Oct doc in ~/Downloads/gta5.rtf): engines are async jobs, qpu runs queue for minutes to hours, any "quantum" claim needs qpu runs, a key must never ship inside a public mod, and the Cloudflare User-Agent rule applies to every call. The doc's four routes still hold: (1) offline asset pipeline, (2) pre-fetched randomness pool, (3) live calls on a background thread, (4) a Moth proxy service. Routes 1 and 2 ship. Route 3 is for a demo video only.
 
@@ -71,7 +70,7 @@ The remaining weeks before launch are for a second mod, a download release, or a
 
 1. **The mod.** What is it? One paragraph: what the player does, what the joke or the point is, whether Moth engines are part of it or it is a pure vibe-coded mission.
 2. **The game.** San Andreas or GTA V. See section 3.
-3. **The Windows machine.** Do you have one, or do we rent one?
+3. ~~The Windows machine.~~ Decided 21 Oct: Paperspace CORE A4000, AMS1, if the account can see Windows templates.
 4. ~~Moth's role.~~ Decided 21 Oct: Atlas is required and is the core of the mod.
 
 ## Sources
