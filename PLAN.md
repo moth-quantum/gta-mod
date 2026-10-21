@@ -28,7 +28,7 @@ Written 21 Oct 2026. GTA 6 ships 19 Nov 2026, so the attention window is about f
 | Moth asset route | Texture swaps via TXD Workshop/Magic.TXD, radio via SA audio tools | YTD swaps via OpenIV (Legacy) or OpenRPF (Enhanced), CodeWalker for maps |
 | Risk | Game needs the 1.0 downgrade patch if bought on Steam/Rockstar | Enhanced tooling is beta. Legacy is the stable modding target |
 
-Default recommendation: San Andreas with CLEO Redux if the mod is a mission or a mechanic you want on video within two weeks. GTA V if the mod is about visuals (Moth texture, LUT or shader work) or you already own a modding-ready GTA V install.
+**Decided 21 Oct: GTA V.** Buy "Grand Theft Auto V Enhanced" on Steam (the only listing; it includes the Legacy build free). **Mod the Legacy build**: Script Hook V 1.0.3889.0 (Jul 2026) supports Legacy 1.0.3889.0, ScriptHookVDotNet 3 is stable there, LemonUI for menus, OpenIV for any texture work. Enhanced's SHVDN build is still a beta and gains us nothing for this mod. Switch to Enhanced only for the final capture if ray tracing is worth it and everything happens to work.
 
 ## 4. How we work together
 
@@ -69,8 +69,8 @@ The remaining weeks before launch are for a second mod, a download release, or a
 ## 6. Open decisions (need you)
 
 1. **The mod.** What is it? One paragraph: what the player does, what the joke or the point is, whether Moth engines are part of it or it is a pure vibe-coded mission.
-2. **The game.** San Andreas or GTA V. See section 3.
-3. ~~The Windows machine.~~ Decided 21 Oct: Paperspace CORE A4000, AMS1, if the account can see Windows templates.
+2. ~~The game.~~ Decided 21 Oct: GTA V Legacy (bought as Enhanced).
+3. ~~The Windows machine.~~ Paperspace CORE A4000 in AMS1 if the account shows Windows templates, else Shadow PC Power. GTA V rules out Parallels and the RTX4000 is marginal; A4000 or better.
 4. ~~Moth's role.~~ Decided 21 Oct: Atlas is required and is the core of the mod.
 
 ## Sources
@@ -101,17 +101,19 @@ The tasks follow the real steps to fault tolerance, so the mission is also a tin
    - **The leak ticker.** A news crawl at the bottom of the screen: "SFPD internal mail public." "Caligula's vault PIN: 0000." "Every Grove Street text message, live." Written to be funny and specific to the game's own characters.
 7. **Ending.** Survive five minutes, or drive to one place. Fade out on a title: "Post-quantum cryptography was available the whole time." Credits: built with Claude Code.
 
-### What each beat needs technically (San Andreas, CLEO Redux)
+### What each beat needs technically (GTA V Legacy, ScriptHookVDotNet 3, C#)
 
-- Text prompts, title cards, HUD counters: CLEO draws text with the game's own font. Same as levelsio's prompts.
-- Area 69 heist: spawn a truck, set a wanted level, a checkpoint blip. Standard CLEO.
-- Error-rate meter: read vehicle health each frame, map damage to a percentage. Trivial.
-- Riot mode and ped aggression: SA already has a riot flag and a hostility system for the LS riots. A CLEO script can switch both on. Day-one job is to confirm the exact opcode or memory flag.
-- Money removal: force player cash to zero every frame and hide the HUD money element.
-- Leak ticker: a text draw that scrolls, fed from an array of lines.
-- Countdown and lockdown: a timer, a garage door, and a "can't leave" check on player position.
+Natives confirmed against alloc8or's native DB on 21 Oct:
+- Title cards, HUD counters, ticker: `BEGIN_TEXT_COMMAND_DISPLAY_TEXT` + `SET_TEXT_SCALE/COLOUR`, `DRAW_RECT` for the backing bar. SHVDN wraps these as `TextElement` and `ContainerElement`. Big moments use scaleform `mp_big_message_freemode` (same thing the game uses for mission passed).
+- Humane Labs heist: spawn the truck with `World.CreateVehicle`, blip with `ADD_BLIP_FOR_COORD`, wanted level with `SET_PLAYER_WANTED_LEVEL` + `_NOW`.
+- Error-rate meter: `GET_VEHICLE_BODY_HEALTH` and `GET_VEHICLE_ENGINE_HEALTH` each tick, damage since pickup becomes a penalty on top of the live Atlas figure.
+- Threshold lockdown: `SET_PLAYER_CONTROL(player, false, 0)`, `SHAKE_GAMEPLAY_CAM("SMALL_EXPLOSION_SHAKE")`, `ANIMPOSTFX_PLAY("DeathFailMPIn")` style post-fx, `SET_WEATHER_TYPE_NOW_PERSIST("THUNDER")`.
+- Q-Day, money gone: `STAT_SET_INT("SP0_TOTAL_CASH" / SP1 / SP2, 0, true)` each tick and `DISPLAY_CASH(false)`. Also `HIDE_HUD_COMPONENT_THIS_FRAME(3)` for the cash component.
+- Q-Day, everyone mental: `SET_RIOT_MODE_ENABLED(true)` (a real leftover native) plus, for each nearby ped every few seconds, `GIVE_WEAPON_TO_PED`, `SET_PED_COMBAT_ATTRIBUTES(ped, 46, true)` (always fight), `SET_PED_FLEE_ATTRIBUTES(ped, 0, false)`, `SET_CAN_ATTACK_FRIENDLY`, and `SET_RELATIONSHIP_BETWEEN_GROUPS(5 /*hate*/, CIVMALE, CIVFEMALE / COP / PLAYER)`. The Atlas random bytes pick who gets what.
+- Leak ticker: scrolling `TextElement` fed from an array; order shuffled by the Atlas bytes.
+- Atlas bridge: the mod polls `bridge/result_*.json` with `File.ReadAllText` on a background `Thread`, never on the script tick. Sidecar runs beside the game.
 
-Everything above is in-engine. Nothing needs new models or audio.
+Build and deploy: `dotnet build` on the Mac (net48 target, `ScriptHookVDotNet3` 3.6.0 and `LemonUI.SHVDN3` from NuGet), copy `QDay.dll` into `GTAV/scripts/`, press Insert in-game to reload SHVDN. Log at `GTAV/ScriptHookVDotNet.log` plus the mod's own `scripts/QDay.log`.
 
 ### Atlas is the machine (required, measured 21 Oct)
 
@@ -141,11 +143,6 @@ CLEO scripts cannot make HTTPS calls and must never hold the key. So:
 - **Offline bundle for release.** The download ships with a `recorded/` folder of real job results (ids and commit hashes included) so it plays without a key. Players with their own Atlas key get live runs. No key ever ships in the mod.
 - **Known gotchas.** Cloudflare rejects the default Python User-Agent, so the sidecar sends a browser one. macOS python.org builds need certifi. Stagger submits, the platform 503s on bursts.
 
-### GTA V variant
-
-Same beats. Humane Labs replaces Area 69, Michael's garage or the Vanilla Unicorn replaces Doherty. GTA V has a native riot mode, ATMs to switch off, and a richer phone for the leak ticker. Costs roughly two more days for the C# toolchain.
-
 ### Still needed
 
-- Game: default is San Andreas unless told otherwise.
-- The Windows box.
+- Confirm the Paperspace account can see Windows templates, else Shadow PC Power.
