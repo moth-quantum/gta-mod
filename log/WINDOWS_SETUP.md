@@ -19,3 +19,6 @@ Order matters. Tick as you go, note anything odd in this file.
 11. [ ] Press F9. Follow the blip. Report what you see; Claude Code on the box reads `QDay.log`, `ScriptHookVDotNet.log` and `bridge\sidecar.log`.
 
 Never launch GTA Online with ScriptHookV installed. Remove `dinput8.dll` first if you ever want to.
+
+## Driving the box from the Mac (works, 22 Oct)
+Clipboard does not cross the Paperspace stream. Claude Code types into it instead: `log/type_to_box.py` sends keystrokes to the Paperspace app via macOS System Events, 4 chars at a time, then screenshots with `screencapture` to verify before pressing Enter. Needs Terminal in System Settings > Privacy & Security > Accessibility. Shifted chars occasionally lose Shift (`*` arrived as `8`, `+` as `=`), and `#` did something odd in PSReadLine, so keep typed lines free of those and always verify with a screenshot. `log/bootstrap_typed.ps1` is the comment-free version of the bootstrap written for this.
