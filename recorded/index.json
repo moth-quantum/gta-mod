@@ -1,0 +1,51 @@
+{
+ "graph_chain_ghz_4q": {
+  "emu": {
+   "job_id": "93524b3e-6274-433b-ad93-a4cbebb03d14",
+   "backend": "aer",
+   "error_rate": 0.0
+  },
+  "fez": {
+   "job_id": "42625a15-d06a-494e-8644-c178eec09b37",
+   "backend": "fake_fez",
+   "error_rate": 0.0173
+  },
+  "marrakesh": {
+   "job_id": "1199af4b-734d-4cf5-9553-2f852687033a",
+   "backend": "fake_marrakesh",
+   "error_rate": 0.0166
+  },
+  "torino": {
+   "job_id": "7af587c8-4011-47d6-8929-56bb7b75cc2b",
+   "backend": "fake_torino",
+   "error_rate": 0.0456
+  },
+  "kyiv": {
+   "job_id": "e75c625f-78ff-462f-be5a-2bc7432432f7",
+   "backend": "fake_kyiv",
+   "error_rate": 0.0407
+  },
+  "brisbane": {
+   "job_id": "39cff5ec-d1f5-4674-b7e8-3a935ae10388",
+   "backend": "fake_brisbane",
+   "error_rate": 0.085
+  },
+  "sherbrooke": {
+   "job_id": "51a6a2a1-0c52-4cc9-bfab-a972cf7f5844",
+   "backend": "fake_sherbrooke",
+   "error_rate": 0.0365
+  },
+  "kingston": {
+   "job_id": "c7543703-3cd4-4879-9931-42b38961090e",
+   "backend": "fake_kingston",
+   "error_rate": 0.0514
+  }
+ },
+ "qrng_qpu_64q": {
+  "job_id": "6eb8fa80-d13f-4f28-8b1b-f8fb7057f16b",
+  "backend": "ibm_marrakesh",
+  "S": 2.711,
+  "bytes": 64,
+  "grade": "hardware-accounted"
+ }
+}
