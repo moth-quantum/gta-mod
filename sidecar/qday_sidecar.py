@@ -104,7 +104,7 @@ def handle_qday(req):
         o = json.load(open(RECORDED / "qrng_qpu_64q_marrakesh.json"))["result"]["output"]
         jid, secs = "recorded", 0
     else:
-        params = {"mode": mode, "num_qubits": 64 if mode == "qpu" else 20, "shots": 2048,
+        params = {"mode": mode, "num_qubits": 64 if mode == "qpu" else 12, "shots": 2048 if mode == "qpu" else 4096,  # emu caps the whole circuit at 20 qubits incl. the 8 witness qubits
                   "output_bytes": 64, "bell_witness": True,
                   "derive": {"integers": {"min": 0, "max": 255, "count": 64}}}
         jid, o, secs = run_job("comet-qrng-v1", params)
