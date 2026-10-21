@@ -16,6 +16,8 @@ using GTA;
 using GTA.Math;
 using GTA.Native;
 using GTA.UI;
+using Screen = GTA.UI.Screen;
+using Font = GTA.UI.Font;
 
 namespace QDay
 {
@@ -441,9 +443,9 @@ namespace QDay
             // Everyone hates everyone, including each other and the cops.
             RiotGroup.SetRelationshipBetweenGroups(RiotGroup, Relationship.Hate, true);
             RiotGroup.SetRelationshipBetweenGroups(Game.Player.Character.RelationshipGroup, Relationship.Hate, true);
-            RiotGroup.SetRelationshipBetweenGroups(new RelationshipGroup("COP"), Relationship.Hate, true);
-            RiotGroup.SetRelationshipBetweenGroups(new RelationshipGroup("CIVMALE"), Relationship.Hate, true);
-            RiotGroup.SetRelationshipBetweenGroups(new RelationshipGroup("CIVFEMALE"), Relationship.Hate, true);
+            RiotGroup.SetRelationshipBetweenGroups(new RelationshipGroup(Game.GenerateHash("COP")), Relationship.Hate, true);
+            RiotGroup.SetRelationshipBetweenGroups(new RelationshipGroup(Game.GenerateHash("CIVMALE")), Relationship.Hate, true);
+            RiotGroup.SetRelationshipBetweenGroups(new RelationshipGroup(Game.GenerateHash("CIVFEMALE")), Relationship.Hate, true);
         }
     }
 
@@ -454,11 +456,11 @@ namespace QDay
             var errText = double.IsNaN(err) ? "--" : (err * 100).ToString("0.00") + "%";
             var color = double.IsNaN(err) ? Color.White : (err <= threshold ? Color.LimeGreen : Color.OrangeRed);
             new ContainerElement(new PointF(20, 20), new SizeF(320, 92), Color.FromArgb(160, 0, 0, 0)).Draw();
-            new TextElement("Q-DAY  " + phase.ToString().ToUpper(), new PointF(30, 24), 0.42f, Color.White, GTA.UI.Font.ChaletLondon, Alignment.Left).Draw();
-            new TextElement($"logical qubits  {logical} / 3", new PointF(30, 48), 0.38f, Color.White, GTA.UI.Font.ChaletLondon, Alignment.Left).Draw();
-            new TextElement($"error rate  {errText}   threshold {threshold * 100:0}%", new PointF(30, 70), 0.38f, color, GTA.UI.Font.ChaletLondon, Alignment.Left).Draw();
+            new TextElement("Q-DAY  " + phase.ToString().ToUpper(), new PointF(30, 24), 0.42f, Color.White, Font.ChaletLondon, Alignment.Left).Draw();
+            new TextElement($"logical qubits  {logical} / 3", new PointF(30, 48), 0.38f, Color.White, Font.ChaletLondon, Alignment.Left).Draw();
+            new TextElement($"error rate  {errText}   threshold {threshold * 100:0}%", new PointF(30, 70), 0.38f, color, Font.ChaletLondon, Alignment.Left).Draw();
             if (phase == Phase.Calibrating || phase == Phase.Threshold)
-                new TextElement(phase == Phase.Threshold ? "IBM hardware queue..." : "calibrating on Atlas...", new PointF(30, 92), 0.34f, Color.LightBlue, GTA.UI.Font.ChaletLondon, Alignment.Left).Draw();
+                new TextElement(phase == Phase.Threshold ? "IBM hardware queue..." : "calibrating on Atlas...", new PointF(30, 92), 0.34f, Color.LightBlue, Font.ChaletLondon, Alignment.Left).Draw();
         }
 
         public static void Ticker(List<string> lines, ref int index, ref float x)
@@ -466,7 +468,7 @@ namespace QDay
             if (lines.Count == 0) return;
             var w = Screen.Resolution.Width; var h = Screen.Resolution.Height;
             new ContainerElement(new PointF(0, h - 48), new SizeF(w, 40), Color.FromArgb(200, 120, 0, 0)).Draw();
-            new TextElement(lines[index % lines.Count], new PointF(x * w, h - 44), 0.55f, Color.White, GTA.UI.Font.Monospace, Alignment.Left).Draw();
+            new TextElement(lines[index % lines.Count], new PointF(x * w, h - 44), 0.55f, Color.White, Font.Monospace, Alignment.Left).Draw();
             x -= 0.004f;
             if (x < -0.6f) { x = 1.0f; index++; }
         }
