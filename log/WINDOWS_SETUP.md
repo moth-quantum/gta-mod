@@ -1,6 +1,10 @@
-# Windows box setup (Paperspace A4000 / Shadow)
+# Windows box setup (Paperspace A4000, AMS1, "Windows 10 (Server 2022) - Licensed", 250 GB)
+
+Machine: QDAY, id ps2rfmhzsknm, created 21 Oct 2026. Stop it in the Paperspace console when not in use.
 
 Order matters. Tick as you go, note anything odd in this file.
+
+0. [ ] Click LAUNCH in the Paperspace console (browser stream). Open PowerShell as admin, paste `bootstrap.ps1` from this folder. It fixes the Server 2022 audio and IE-hardening quirks and installs Chrome, Parsec, Steam, Git, Python, Node, Claude Code.
 
 1. [ ] Parsec installed on the box and on the Mac, logged in, 1080p60 stream works.
 2. [ ] Steam installed. Buy / install "Grand Theft Auto V Enhanced". In the Steam library, also install the **Legacy** entry it unlocks. Disk: ~100 GB.
