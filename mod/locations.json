@@ -1,0 +1,35 @@
+{
+  "_note": "Coordinates from community lists, verify each in-game on day one. z is ground height at that x,y.",
+  "lab": {
+    "name": "Lester's house (the machine is built here)",
+    "pos": [1248.18, -1728.10, 56.0],
+    "truck_spawn": [1264.0, -1730.0, 55.5]
+  },
+  "chips": [
+    {
+      "key": "brisbane",
+      "label": "Humane Labs cryostat",
+      "pos": [3617.23, 3739.87, 28.69],
+      "wanted": 3,
+      "line": "Biotech cryostat. Noisy as hell, but it is cold."
+    },
+    {
+      "key": "torino",
+      "label": "FIB Building control plane",
+      "pos": [135.52, -749.0, 45.75],
+      "wanted": 4,
+      "line": "Government-grade control electronics. They will notice."
+    },
+    {
+      "key": "fez",
+      "label": "Fort Zancudo qubit array",
+      "pos": [-2047.0, 3132.0, 32.8],
+      "wanted": 5,
+      "line": "The real thing. Military. Do not scratch it."
+    }
+  ],
+  "ending": {
+    "name": "Vinewood sign",
+    "pos": [776.88, 1175.61, 345.96]
+  }
+}
