@@ -131,7 +131,7 @@ Verified output fields: graph-v1 returns `measurements[]{bitstring,count}` (comp
 **Measured 21 Oct, things that bit:**
 - graph-v1 `io` knobs `dynamical_decoupling`, `error_mitigation` and `sim_noise` fail the job outright on fake backends ("job failed and produced no result"). `twirling` is silently ignored. So the "unlock a real error-suppression technique" idea is parked; the chip ladder replaces it. Raise with the platform team.
 - `fake_aachen` fails. The seven chips above work.
-- comet-qrng at the default 12 qubits returns ZERO conditioned bytes on hardware: grade `hardware-insufficient-entropy`, because the ordering penalty for counts-only readout (about 12 bits per shot at 4096 shots) exceeds 12 qubits x 0.76 bits. The Bell witness and commit hash still come back. **Fixed: 64 qubits, 2048 shots on ibm_marrakesh returned in 22 s with grade `hardware-accounted`, 27k bits budget, 64 certified bytes, S = 2.71, 22 sigma.** Use `num_qubits: 64, shots: 2048` for the Q-Day job.
+- comet-qrng at the default 12 qubits returns ZERO conditioned bytes on hardware: grade `hardware-insufficient-entropy`, because the ordering penalty for counts-only readout (about 12 bits per shot at 4096 shots) exceeds 12 qubits x 0.76 bits. The Bell witness and commit hash still come back. **Fixed: 64 qubits, 2048 shots on ibm_marrakesh returned in 22 s with grade `hardware-accounted`, 27k bits budget, 64 certified bytes, S = 2.71, 22 sigma.** Use `num_qubits: 64, shots: 2048` for the Q-Day job. The emulator path (12 qubits, needed to fit under its 20-qubit cap with the witness) gives bytes only sometimes; the sidecar falls back to local random and flags `certified: false`, which is fine for dev and never used in the video.
 
 ### How the game talks to Atlas
 
