@@ -52,7 +52,7 @@ namespace QDay
             KeyDown += OnKeyDown;
             Interval = 0;
             Log.Write("Q-DAY loaded. F9 to start.");
-            Notification.Show("~b~Q-DAY~s~ loaded. Press F9.");
+            Notification.Show("~b~Q-DAY~s~ loaded. F9 start, F10 abort, F5 teleport, F6 skip wait, F7 Q-Day now.");
         }
 
         // ---- input ---------------------------------------------------------------
@@ -60,6 +60,26 @@ namespace QDay
         {
             if (e.KeyCode == Keys.F9 && phase == Phase.Idle) StartMission();
             if (e.KeyCode == Keys.F10) { Log.Write("abort"); Reset(); }
+            // Playtest shortcuts. F5 teleports to the current objective, F6 fakes the pending Atlas
+            // result from the recorded run, F7 jumps straight to Q-Day. All logged so a recording
+            // that used them is obvious.
+            if (e.KeyCode == Keys.F5 && phase != Phase.Idle) DebugTeleport();
+            if (e.KeyCode == Keys.F6 && phase == Phase.Calibrating) { Log.Write("DEBUG F6 recorded calibration"); errorRate = chipIndex == loc.Chips.Count - 1 ? 0.0173 : 0.085; AfterCalibration(); }
+            if (e.KeyCode == Keys.F6 && phase == Phase.Threshold) { Log.Write("DEBUG F6 recorded qday"); BeginQDay(AtlasResult.Recorded()); }
+            if (e.KeyCode == Keys.F7) { Log.Write("DEBUG F7 jump to Q-Day"); if (phase == Phase.Idle) StartMission(); lastResult = AtlasResult.Recorded(); BeginQDay(lastResult); }
+        }
+
+        void DebugTeleport()
+        {
+            var ped = Game.Player.Character;
+            Vector3 target;
+            if (phase == Phase.Heist) target = loc.Chips[chipIndex].Pos;
+            else if (phase == Phase.Delivery) target = loc.Lab.Pos;
+            else target = loc.Lab.Pos;
+            var ent = ped.IsInVehicle() ? (Entity)ped.CurrentVehicle : ped;
+            ent.Position = target + new Vector3(3f, 3f, 0.5f);
+            Log.Write($"DEBUG F5 teleport to {target} in phase {phase}");
+            Screen.ShowSubtitle("~y~debug teleport~s~", 1500);
         }
 
         // ---- main loop -----------------------------------------------------------
@@ -335,7 +355,8 @@ namespace QDay
         public Bridge(Action<string> log)
         {
             this.log = log;
-            dir = Environment.GetEnvironmentVariable("QDAY_BRIDGE") ?? Path.Combine(Log.ScriptsDir, "qday_bridge");
+            dir = Environment.GetEnvironmentVariable("QDAY_BRIDGE");
+            if (string.IsNullOrEmpty(dir)) dir = Directory.Exists(@"C:\gta-mod\bridge") ? @"C:\gta-mod\bridge" : Path.Combine(Log.ScriptsDir, "qday_bridge");
             Directory.CreateDirectory(dir);
             var t = new Thread(Poll) { IsBackground = true }; t.Start();
             log("bridge dir " + dir);
