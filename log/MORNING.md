@@ -10,7 +10,7 @@
 - GTA V Enhanced uninstalled (it was filling the disk). Legacy installs to `C:\Program Files (x86)\Steam\steamapps\common\Grand Theft Auto V`.
 
 ## What to do
-1. Claude launched Legacy once at 00:55 to get the Rockstar Games Launcher installed. Expect it sitting at a Rockstar login, or a first-run dialog. Log in. If the game closed instead, Steam, Grand Theft Auto V Legacy, Play.
+1. At 07:11 Claude launched Legacy in story mode (Steam is now set to always launch story mode, never Online), picked English in the Rockstar Games Launcher, and stopped at its Welcome screen. Press Continue there (it installs launcher components and accepts Rockstar's terms), then sign in to your Rockstar account.
 2. Story mode. First load does shader warm-up and takes a few minutes.
 3. Expect a notification: "Q-DAY loaded. F9 start, F10 abort, F5 teleport, F6 skip wait, F7 Q-Day now."
 4. Press **F9**. Follow the blip to Humane Labs. **F5** teleports you to the current objective so the first run takes minutes, not an hour. **F6** skips an Atlas wait with recorded data if the sidecar is down. **F7** jumps straight to Q-Day to see the riot.
