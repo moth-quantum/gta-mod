@@ -30,3 +30,12 @@
 - **Game folder state now:** `dinput8.dll` = Ultimate ASI Loader 9.7.4; `dinput8.shv.off` = Script Hook V's original loader; `ScriptHookVDotNet.asi.off`; ScriptHookVDotNet 2/3 dlls + ini = nightly 194; ScriptHookV.dll 3889; scripts\QDay.dll unchanged.
 - Steam now always launches Legacy in story mode.
 - Next ideas: read the in-flight result; try ScriptHookV + NativeTrainer.asi only; check Windows Event Viewer for the faulting module; if Server 2022 itself is the cause, move to a Windows 10/11 box (Shadow PC).
+
+## 22 Oct, 12:20–12:40: diagnosis by Claude Code on the box (transcribed from its screen; its own edits stayed on the box)
+- **Test 1, Ultimate ASI Loader + ScriptHookV.dll, SHVDN off:** crashes, 0xc000009a. No ScriptHookV.log, ScriptHookVDotNet.log or QDay.log written.
+- **Test 2, Script Hook V's own 2015 dinput8.dll only, no .asi, no .NET:** crashes the same way.
+- **Event log / WER:** nothing for GTA5.exe, ever. 0xc000009a (STATUS_INSUFFICIENT_RESOURCES) is raised by the Windows loader during DLL init, before any handler or crash reporting, so there is no faulting module to find.
+- **Ruled out:** CI/code-integrity policy, Defender, AppLocker (no logs), IFEO, Get-ProcessMitigation (all NOTSET). Plus the earlier list: disk, RAM, versions, SHVDN build, loader choice.
+- **Test 3 (proxy as version.dll instead of dinput8):** inconclusive. The Rockstar Games Launcher started failing its self-update (code 241) on every launch, even with a vanilla folder, so GTA5.exe never started.
+- **Conclusion:** two independent dinput8 proxies both crash GTA5.exe at load on this Windows Server 2022 box. Treat it as a Server 2022 incompatibility. Move to a Windows 10/11 machine (Shadow PC). Separately, expect to re-check the launcher 241 issue on the new box.
+- Box left with a vanilla game folder; loaders kept as .off files.
