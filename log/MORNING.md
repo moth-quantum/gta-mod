@@ -21,3 +21,12 @@
 - `SET_RIOT_MODE_ENABLED` is a leftover native. If nothing happens at Q-Day, the per-ped arming loop still runs, so the riot should happen either way, just slower.
 - The HUD text uses SHVDN's TextElement; if it draws off-screen at your resolution, say so.
 - Never open GTA Online with the loaders installed.
+
+## Paused 22 Oct, 07:50: GTA5.exe crash 0xc000009a with mods
+- **Unmodded game runs.** With no loader it reaches Display Calibration.
+- **Any mod setup crashes at start** with "unable to start correctly (0xc000009a)". No ScriptHookV.log is written, so Script Hook V never initialises.
+- Ruled out: disk (100 GB free), RAM (45 GB), game/SHV version mismatch (both 1.0.3889.0), old SHVDN (swapped to nightly 3.7.0-194, still crashes), SHV's own loader (swapped to Ultimate ASI Loader 9.7.4, still crashes), missing system dinput8.dll (present).
+- **Test in flight when paused:** UAL loader present, ScriptHookVDotNet.asi renamed to `.asi.off`, game launched. If it starts, the crash is in the SHVDN to ScriptHookV.dll chain; if not, any dinput8 proxy crashes on this Server 2022 box.
+- **Game folder state now:** `dinput8.dll` = Ultimate ASI Loader 9.7.4; `dinput8.shv.off` = Script Hook V's original loader; `ScriptHookVDotNet.asi.off`; ScriptHookVDotNet 2/3 dlls + ini = nightly 194; ScriptHookV.dll 3889; scripts\QDay.dll unchanged.
+- Steam now always launches Legacy in story mode.
+- Next ideas: read the in-flight result; try ScriptHookV + NativeTrainer.asi only; check Windows Event Viewer for the faulting module; if Server 2022 itself is the cause, move to a Windows 10/11 box (Shadow PC).
