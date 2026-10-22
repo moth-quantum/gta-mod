@@ -5,3 +5,4 @@ __pycache__/
 mod/obj/
 mod/bin/*
 !mod/bin/QDay.dll
+.deploy/
