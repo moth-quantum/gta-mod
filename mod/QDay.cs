@@ -114,7 +114,9 @@ namespace QDay
         // ---- phases --------------------------------------------------------------
         // Early story missions (Franklin and Lamar, Repossession, Chop) fail the moment the player leaves,
         // which snaps them back to a checkpoint. Q-DAY switches them off while it runs.
-        static readonly string[] StoryScripts = { "armenian1", "armenian2", "armenian3", "franklin0", "franklin1", "replay_controller" };
+        // Controllers first, so nothing is left to notice the mission ending and show "Mission failed".
+        static readonly string[] StoryScripts = { "replay_controller", "flow_controller", "candidate_controller", "mission_triggerer_a", "mission_triggerer_b", "mission_triggerer_c", "mission_triggerer_d",
+                                                  "armenian1", "armenian2", "armenian3", "franklin0", "franklin1" };
         void StopStoryMissions()
         {
             foreach (var name in StoryScripts) Function.Call(Hash.TERMINATE_ALL_SCRIPTS_WITH_THIS_NAME, name);
