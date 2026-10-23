@@ -49,3 +49,10 @@
 - Mod loads and runs: HUD, F9 start, F5 teleport to Humane Labs, pickup -> DELIVERY all work.
 - **Blocker on a fresh save:** the first story mission (Franklin and Lamar, script `armenian1`) auto-starts and fails as soon as Q-DAY moves Franklin, snapping him back to the alley. Killing it from the mod shows "Mission failed" (Restart only). Killing the flow controllers first avoided that at F9, but a teleport still failed it. Real fix: play Franklin and Lamar once (about 10 min) or use a save past it, then Q-DAY runs in free roam.
 - Remote control from the Mac through Shadow: keys work while the game has focus, mouse doesn't map; clicks/keys sent from PowerShell (SetCursorPos/mouse_event/keybd_event) work but Alt+Tab leaves the game paused without input focus.
+
+## 23 Oct, 13:45–14:05: full run on a 100% save
+- 100% save (libertycity.net file 205368, slot 01 "The Last One") removes the story-mission blocker. Q-DAY runs cleanly in free roam.
+- Captured: title, Lester briefing, Humane Labs wanted level, truck at Lester's "calibrating on Atlas", TOO NOISY 8.5%, Q-Day "Bell S = 2.71 > 2", ticker with commit hash + leaks.
+- Fixed: ticker was off-screen (SHVDN UI canvas is 1280x720, not the real resolution). Added F8 = teleport to Legion Square.
+- Not yet seen: the riot. Legion Square was empty in the Q-Day storm, so there were no peds to arm. Next: spawn a crowd at Q-Day, or skip the THUNDER weather until peds are armed.
+- Sidecar was not running on Shadow, so the run used recorded results (F6/F7).
