@@ -66,6 +66,7 @@ namespace QDay
             if (e.KeyCode == Keys.F5 && phase != Phase.Idle) DebugTeleport();
             if (e.KeyCode == Keys.F6 && phase == Phase.Calibrating) { Log.Write("DEBUG F6 recorded calibration"); errorRate = chipIndex == loc.Chips.Count - 1 ? 0.0173 : 0.085; AfterCalibration(); }
             if (e.KeyCode == Keys.F6 && phase == Phase.Threshold) { Log.Write("DEBUG F6 recorded qday"); BeginQDay(AtlasResult.Recorded()); }
+            if (e.KeyCode == Keys.F8) { var pl = Game.Player.Character; pl.Position = new Vector3(195.0f, -933.0f, 30.7f); Log.Write("DEBUG F8 teleport to Legion Square"); }
             if (e.KeyCode == Keys.F7) { Log.Write("DEBUG F7 jump to Q-Day"); if (phase == Phase.Idle) StartMission(); lastResult = AtlasResult.Recorded(); BeginQDay(lastResult); }
         }
 
@@ -509,7 +510,8 @@ namespace QDay
         public static void Ticker(List<string> lines, ref int index, ref float x)
         {
             if (lines.Count == 0) return;
-            var w = Screen.Resolution.Width; var h = Screen.Resolution.Height;
+            // SHVDN UI elements use a fixed 1280x720 canvas, not the real resolution.
+            const float w = 1280f, h = 720f;
             new ContainerElement(new PointF(0, h - 48), new SizeF(w, 40), Color.FromArgb(200, 120, 0, 0)).Draw();
             new TextElement(lines[index % lines.Count], new PointF(x * w, h - 44), 0.55f, Color.White, Font.Monospace, Alignment.Left).Draw();
             x -= 0.004f;
