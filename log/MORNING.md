@@ -39,3 +39,8 @@
 - **Test 3 (proxy as version.dll instead of dinput8):** inconclusive. The Rockstar Games Launcher started failing its self-update (code 241) on every launch, even with a vanilla folder, so GTA5.exe never started.
 - **Conclusion:** two independent dinput8 proxies both crash GTA5.exe at load on this Windows Server 2022 box. Treat it as a Server 2022 incompatibility. Move to a Windows 10/11 machine (Shadow PC). Separately, expect to re-check the launcher 241 issue on the new box.
 - Box left with a vanilla game folder; loaders kept as .off files.
+
+## 23 Oct, 01:45: Shadow PC (Windows 11): game starts with mods
+- **The 0xc000009a crash was BattlEye**, not Server 2022 and not the cloud. Fix: Rockstar Games Launcher > Settings > General > untick BattlEye, AND Steam > GTA V Legacy > Properties > Launch options `-nobattleye`. Both machines had it on.
+- With that, Script Hook V and ScriptHookVDotNet load and find QDay.dll.
+- **Next failure:** SHVDN 3.6.0 throws in `SHVDN.NativeMemory..cctor` (NullReferenceException) when the mod constructor calls `Notification.Show`. 3.6.0 is too old for game 1.0.3889. Use 3.7.0-nightly.194; bootstrap now downloads it.

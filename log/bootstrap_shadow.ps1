@@ -21,7 +21,7 @@ New-Item -ItemType Directory -Force C:\gta-mod\bridge | Out-Null
 $ua = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'
 Invoke-WebRequest 'http://www.dev-c.com/files/ScriptHookV_3889.0_1158.13.zip' -OutFile C:\gta-mod\shv.zip `
   -UserAgent $ua -Headers @{ Referer = 'http://www.dev-c.com/gtav/scripthookv/' }
-Invoke-WebRequest 'https://github.com/scripthookvdotnet/scripthookvdotnet/releases/download/v3.6.0/ScriptHookVDotNet.zip' -OutFile C:\gta-mod\shvdn.zip -UserAgent $ua
+Invoke-WebRequest 'https://github.com/scripthookvdotnet/scripthookvdotnet-nightly/releases/download/v3.7.0-nightly.194/ScriptHookVDotNet-v3.7.0-nightly.194.zip' -OutFile C:\gta-mod\shvdn.zip -UserAgent $ua
 Get-ChildItem C:\gta-mod\*.zip | ForEach-Object { Write-Host ("{0}  {1}" -f $_.Name, $_.Length) }
 
 # 5. Read-only deploy key for the private repo. Copy the printed public key back to the Mac.
