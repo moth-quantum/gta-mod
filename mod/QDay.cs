@@ -63,7 +63,7 @@ namespace QDay
             // Playtest shortcuts. F5 teleports to the current objective, F6 fakes the pending Atlas
             // result from the recorded run, F7 jumps straight to Q-Day. All logged so a recording
             // that used them is obvious.
-            if (e.KeyCode == Keys.F5 && phase != Phase.Idle) { StopStoryMissions(); DebugTeleport(); }
+            if (e.KeyCode == Keys.F5 && phase != Phase.Idle) DebugTeleport();
             if (e.KeyCode == Keys.F6 && phase == Phase.Calibrating) { Log.Write("DEBUG F6 recorded calibration"); errorRate = chipIndex == loc.Chips.Count - 1 ? 0.0173 : 0.085; AfterCalibration(); }
             if (e.KeyCode == Keys.F6 && phase == Phase.Threshold) { Log.Write("DEBUG F6 recorded qday"); BeginQDay(AtlasResult.Recorded()); }
             if (e.KeyCode == Keys.F7) { Log.Write("DEBUG F7 jump to Q-Day"); if (phase == Phase.Idle) StartMission(); lastResult = AtlasResult.Recorded(); BeginQDay(lastResult); }
