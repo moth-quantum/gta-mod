@@ -76,6 +76,14 @@ namespace QDay
             if (phase == Phase.Heist) target = loc.Chips[chipIndex].Pos;
             else if (phase == Phase.Delivery) target = loc.Lab.Pos;
             else target = loc.Lab.Pos;
+            // In Delivery, first put the player back in the truck (story missions can yank them away), then bring the truck home.
+            if (phase == Phase.Delivery && truck != null && truck.Exists() && !ped.IsInVehicle(truck))
+            {
+                ped.SetIntoVehicle(truck, VehicleSeat.Driver);
+                Log.Write("DEBUG F5 put player back in the truck");
+                Screen.ShowSubtitle("~y~debug: back in the truck. F5 again to drive home~s~", 2500);
+                return;
+            }
             var ent = ped.IsInVehicle() ? (Entity)ped.CurrentVehicle : ped;
             ent.Position = target + new Vector3(3f, 3f, 0.5f);
             Log.Write($"DEBUG F5 teleport to {target} in phase {phase}");
