@@ -1,13 +1,15 @@
 # Q-DAY: a GTA mod built with Claude Code on Moth Atlas
 
-Read PLAN.md first. Section 7 is the mission design; the Atlas table in it has the measured numbers.
+Read README.md first, then log/MORNING.md for what broke and why. PLAN.md section 7 has the original design and the measured Atlas numbers; where it disagrees with mod/QDay.cs (it still mentions CJ and San Andreas), the code wins.
 
 ## Layout
 - `PLAN.md`             the plan and design, keep it current
 - `sidecar/`            Python bridge between the game and Atlas (game writes request_*.json, sidecar writes result_*.json). Game-agnostic.
 - `recorded/`           real Atlas job results captured 2026-10-21, used offline and as the release fallback
 - `mod/`                the in-game script: `QDay.cs` + `QDay.csproj` (ScriptHookVDotNet 3, C#, net48), `locations.json` (verify coords in-game). `dotnet build` here on the Mac, copy `bin/QDay.dll` and `locations.json` (as `QDay.locations.json`) into `GTAV/scripts/`.
-- `log/`                playtest notes and logs from the Windows box
+- `setup/`              Windows PC setup: WINDOWS_SETUP.md, bootstrap_windows.ps1, install_loaders.ps1
+- `log/`                playtest notes (MORNING.md is the running log)
+- `tools/remote-box/`   Mac-side helpers for driving a cloud PC by keystrokes
 
 ## Rules
 - The Atlas key lives in the environment (`MOTH_API_TOKEN`), never in a file in this repo, never in the mod folder.
@@ -18,7 +20,7 @@ Read PLAN.md first. Section 7 is the mission design; the Atlas table in it has t
 - graph-v1 `io` knobs other than seeds fail or are ignored on fake backends. Use the chip ladder instead.
 
 ## Game: GTA V Legacy
-Bought as "GTA V Enhanced" on Steam (includes Legacy). Mod the Legacy build: Script Hook V 1.0.3889.0, ScriptHookVDotNet 3.6+, LemonUI optional. F9 starts the mission, F10 aborts, Insert reloads scripts. Natives used are listed in PLAN.md section 7 and were checked against alloc8or's native DB (SET_RIOT_MODE_ENABLED = 0x2587A48BC88DFADF).
+Bought as "GTA V Enhanced" on Steam (includes Legacy). Mod the Legacy build: Script Hook V 1.0.3889.0, ScriptHookVDotNet 3.7.0-nightly.194+ (3.6.0 fails in NativeMemory on this build), LemonUI optional. BattlEye must be off (launcher setting + Steam `-nobattleye`) or GTA5.exe dies with 0xc000009a. F9 starts the mission, F10 aborts, Insert reloads scripts. Natives used are listed in PLAN.md section 7 and were checked against alloc8or's native DB (SET_RIOT_MODE_ENABLED = 0x2587A48BC88DFADF).
 
 ## Sidecar
     MOTH_API_TOKEN=... python3 sidecar/qday_sidecar.py           # live

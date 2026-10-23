@@ -1,4 +1,4 @@
-# Q-DAY box bootstrap for a Shadow PC (Windows 11). Run in an elevated PowerShell.
+# Q-DAY setup for a Windows 10/11 PC (tested on a Shadow cloud PC). Run in an elevated PowerShell.
 # Paste the whole thing. Takes ~10 minutes. Safe to re-run.
 # Logins (Steam, Rockstar, Claude, the Atlas key) are done by hand afterwards.
 Set-ExecutionPolicy Bypass -Scope Process -Force
@@ -17,7 +17,7 @@ irm https://claude.ai/install.ps1 | iex
 New-Item -ItemType Directory -Force C:\gta-mod\bridge | Out-Null
 [Environment]::SetEnvironmentVariable('QDAY_BRIDGE', 'C:\gta-mod\bridge', 'User')
 
-# 4. Loader downloads, used later by log\install_loaders.ps1.
+# 4. Loader downloads, used later by setup\install_loaders.ps1.
 $ua = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'
 Invoke-WebRequest 'http://www.dev-c.com/files/ScriptHookV_3889.0_1158.13.zip' -OutFile C:\gta-mod\shv.zip `
   -UserAgent $ua -Headers @{ Referer = 'http://www.dev-c.com/gtav/scripthookv/' }

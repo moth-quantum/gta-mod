@@ -84,6 +84,8 @@ The remaining weeks before launch are for a second mod, a download release, or a
 
 ## 7. The mod: Q-DAY (first design, 21 Oct)
 
+> Note, 23 Oct: this section was written for San Andreas and then moved to GTA V. As built, Lester replaces CJ, his house replaces the Doherty garage, and the three parts come from Humane Labs, the FIB building and Fort Zancudo. `mod/QDay.cs` is the source of truth.
+
 Premise: CJ builds a fault-tolerant quantum computer in the Doherty garage. The moment it reaches threshold it runs Shor's algorithm, every key on earth is broken, and San Andreas loses its mind. Money stops existing. Everyone turns on everyone.
 
 The tasks follow the real steps to fault tolerance, so the mission is also a tiny explainer.
