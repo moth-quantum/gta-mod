@@ -44,3 +44,8 @@
 - **The 0xc000009a crash was BattlEye**, not Server 2022 and not the cloud. Fix: Rockstar Games Launcher > Settings > General > untick BattlEye, AND Steam > GTA V Legacy > Properties > Launch options `-nobattleye`. Both machines had it on.
 - With that, Script Hook V and ScriptHookVDotNet load and find QDay.dll.
 - **Next failure:** SHVDN 3.6.0 throws in `SHVDN.NativeMemory..cctor` (NullReferenceException) when the mod constructor calls `Notification.Show`. 3.6.0 is too old for game 1.0.3889. Use 3.7.0-nightly.194; bootstrap now downloads it.
+
+## 23 Oct, 12:00–13:05: first in-game runs on Shadow
+- Mod loads and runs: HUD, F9 start, F5 teleport to Humane Labs, pickup -> DELIVERY all work.
+- **Blocker on a fresh save:** the first story mission (Franklin and Lamar, script `armenian1`) auto-starts and fails as soon as Q-DAY moves Franklin, snapping him back to the alley. Killing it from the mod shows "Mission failed" (Restart only). Killing the flow controllers first avoided that at F9, but a teleport still failed it. Real fix: play Franklin and Lamar once (about 10 min) or use a save past it, then Q-DAY runs in free roam.
+- Remote control from the Mac through Shadow: keys work while the game has focus, mouse doesn't map; clicks/keys sent from PowerShell (SetCursorPos/mouse_event/keybd_event) work but Alt+Tab leaves the game paused without input focus.
