@@ -476,12 +476,12 @@ namespace QDay
         {
             var errText = double.IsNaN(err) ? "--" : (err * 100).ToString("0.00") + "%";
             var color = double.IsNaN(err) ? Color.White : (err <= threshold ? Color.LimeGreen : Color.OrangeRed);
-            new ContainerElement(new PointF(20, 20), new SizeF(320, 92), Color.FromArgb(160, 0, 0, 0)).Draw();
-            new TextElement("Q-DAY  " + phase.ToString().ToUpper(), new PointF(30, 24), 0.42f, Color.White, Font.ChaletLondon, Alignment.Left).Draw();
-            new TextElement($"logical qubits  {logical} / 3", new PointF(30, 48), 0.38f, Color.White, Font.ChaletLondon, Alignment.Left).Draw();
-            new TextElement($"error rate  {errText}   threshold {threshold * 100:0}%", new PointF(30, 70), 0.38f, color, Font.ChaletLondon, Alignment.Left).Draw();
+            new ContainerElement(new PointF(940, 140), new SizeF(320, 92), Color.FromArgb(160, 0, 0, 0)).Draw();
+            new TextElement("Q-DAY  " + phase.ToString().ToUpper(), new PointF(950, 144), 0.42f, Color.White, Font.ChaletLondon, Alignment.Left).Draw();
+            new TextElement($"logical qubits  {logical} / 3", new PointF(950, 168), 0.38f, Color.White, Font.ChaletLondon, Alignment.Left).Draw();
+            new TextElement($"error rate  {errText}   threshold {threshold * 100:0}%", new PointF(950, 190), 0.38f, color, Font.ChaletLondon, Alignment.Left).Draw();
             if (phase == Phase.Calibrating || phase == Phase.Threshold)
-                new TextElement(phase == Phase.Threshold ? "IBM hardware queue..." : "calibrating on Atlas...", new PointF(30, 92), 0.34f, Color.LightBlue, Font.ChaletLondon, Alignment.Left).Draw();
+                new TextElement(phase == Phase.Threshold ? "IBM hardware queue..." : "calibrating on Atlas...", new PointF(950, 212), 0.34f, Color.LightBlue, Font.ChaletLondon, Alignment.Left).Draw();
         }
 
         public static void Ticker(List<string> lines, ref int index, ref float x)
