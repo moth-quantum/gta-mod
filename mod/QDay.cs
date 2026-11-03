@@ -534,50 +534,70 @@ namespace QDay
         /// <summary>
         /// Work out where scripts\ actually is.
         ///
-        /// This used to be `Path.GetDirectoryName(typeof(Log).Assembly.Location)`, which
-        /// does not survive SHVDN: it loads script assemblies in a way that leaves
-        /// Assembly.Location empty, and GetDirectoryName("") returns "". The result was a
-        /// relative path, so QDay.log was never written anywhere findable -- and because
-        /// Write() swallowed every exception, nothing ever said so.
+        /// This used to be `Path.GetDirectoryName(typeof(Log).Assembly.Location)`.
+        /// **Assembly.Location is the wrong question under SHVDN**, which shadow-copies
+        /// script assemblies: for QDay.dll it returns something like
+        ///   %LOCALAPPDATA%\assembly\dl3\XN811RXO.2XM\...\QDay.dll
+        /// so the log was written into a .NET shadow-copy cache folder nobody would ever
+        /// look in. Measured on the test box: nine stale QDay.log files in there, and
+        /// none at all in scripts\. Write() swallowed every exception, so nothing said so.
         ///
-        /// It is not only the log. ScriptsDir also resolves QDay.locations.json, so a
-        /// wrong value means the mod silently falls back to the hardcoded Defaults and
-        /// any edit to locations.json is ignored.
+        /// It is not only the log. ScriptsDir also resolves QDay.locations.json, which is
+        /// NOT in the shadow-copy cache -- so the lookup always missed and the mod fell
+        /// back to the hardcoded Defaults, silently ignoring every edit to locations.json.
+        /// That is confirmed in the recovered log:
+        ///   "locations: NO file found next to the script, using hardcoded Defaults"
         ///
-        /// Tries, in order: the assembly's own folder; the game folder (AppDomain base,
-        /// i.e. where GTA5.exe lives) plus "scripts"; the current directory plus
-        /// "scripts"; finally temp, so logging always goes somewhere.
+        /// So: ask the AppDomain, not the assembly. SHVDN runs scripts in its own
+        /// ScriptDomain whose BaseDirectory IS scripts\ (measured:
+        /// "C:\...\Grand Theft Auto V\scripts", FriendlyName "SHVDN_ScriptDomain_...").
+        /// The candidates below cover that, plus the layouts other SHVDN versions might
+        /// use, and prefer whichever actually holds the locations file.
         /// </summary>
         static string ResolveScriptsDir(out string how)
         {
+            var candidates = new List<KeyValuePair<string, string>>();
+            Action<string, string> add = (label, dir) =>
+            {
+                if (!string.IsNullOrEmpty(dir)) candidates.Add(new KeyValuePair<string, string>(label, dir));
+            };
+
             try
             {
-                var loc = typeof(Log).Assembly.Location;
-                if (!string.IsNullOrEmpty(loc))
-                {
-                    var dir = Path.GetDirectoryName(loc);
-                    if (!string.IsNullOrEmpty(dir) && Directory.Exists(dir)) { how = "Assembly.Location"; return dir; }
-                }
+                var baseDir = AppDomain.CurrentDomain.BaseDirectory;   // SHVDN: this IS scripts\
+                add("AppDomain.BaseDirectory", baseDir);
+                if (!string.IsNullOrEmpty(baseDir)) add("AppDomain.BaseDirectory + scripts", Path.Combine(baseDir, "scripts"));
             }
             catch { }
 
             try
             {
-                var baseDir = AppDomain.CurrentDomain.BaseDirectory;   // the GTA V folder
-                if (!string.IsNullOrEmpty(baseDir))
-                {
-                    var dir = Path.Combine(baseDir, "scripts");
-                    if (Directory.Exists(dir)) { how = "AppDomain.BaseDirectory + scripts"; return dir; }
-                }
+                var cwd = Directory.GetCurrentDirectory();             // the GTA V folder
+                if (!string.IsNullOrEmpty(cwd)) add("CurrentDirectory + scripts", Path.Combine(cwd, "scripts"));
+                add("CurrentDirectory", cwd);
             }
             catch { }
 
-            try
+            // First choice: a candidate that actually contains the locations file, since
+            // that is the thing whose absence was silently changing the mission.
+            foreach (var c in candidates)
             {
-                var dir = Path.Combine(Directory.GetCurrentDirectory(), "scripts");
-                if (Directory.Exists(dir)) { how = "CurrentDirectory + scripts"; return dir; }
+                try
+                {
+                    if (Directory.Exists(c.Value) &&
+                        (File.Exists(Path.Combine(c.Value, "QDay.locations.json")) ||
+                         File.Exists(Path.Combine(c.Value, "locations.json"))))
+                    { how = c.Key + " (has locations file)"; return c.Value; }
+                }
+                catch { }
             }
-            catch { }
+
+            // Otherwise the first one that exists, so the log still lands somewhere sane.
+            foreach (var c in candidates)
+            {
+                try { if (Directory.Exists(c.Value)) { how = c.Key; return c.Value; } }
+                catch { }
+            }
 
             how = "temp (no scripts folder found)";
             return Path.GetTempPath();
