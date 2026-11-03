@@ -56,3 +56,85 @@
 - Fixed: ticker was off-screen (SHVDN UI canvas is 1280x720, not the real resolution). Added F8 = teleport to Legion Square.
 - Not yet seen: the riot. Legion Square was empty in the Q-Day storm, so there were no peds to arm. Next: spawn a crowd at Q-Day, or skip the THUNDER weather until peds are armed.
 - Sidecar was not running on Shadow, so the run used recorded results (F6/F7).
+
+## 3 Nov: ticker fixed, riot finally seen, and the log was lying to us
+Five fixes, each on its own branch/PR. Everything below was run on the Shadow box
+against GTA V Legacy 1.0.3889 with SHVDN 3.7.0-nightly.194, story mode, audio
+muted, using a combined local build of all five.
+
+### VERIFIED in game
+- **The leak ticker (#1).** Was janky because it scrolled a fixed step every
+  FRAME (`x -= 0.004f`, `Interval = 0`), so its speed tracked framerate and
+  lurched on every dip. Rewritten as a time-based belt: measured in game at a
+  steady **150 canvas px/s while fps moved between 83 and 102**, offset wrapping
+  against the head item's width rather than growing, belt 6-9 items deep. Also
+  fixed: it recycled at a hardcoded `x < -0.6f` regardless of message width (long
+  messages snapped back mid-sentence, short ones left the bar empty); text
+  reaching the right edge WRAPPED onto a second line under the bar (GTA wraps by
+  default - no log, only visible on screen); the bar covered the minimap.
+- **`scripts\QDay.log` never existed, and it was not a permissions problem (#4).**
+  SHVDN shadow-copies script DLLs, so `Assembly.Location` points at
+  `%LOCALAPPDATA%\assembly\dl3\...\QDay.dll`. The log was being written there the
+  whole time - **nine stale copies** were found in that cache. `Write()` swallowed
+  every exception so nothing ever said so.
+  **The serious part: `ScriptsDir` also resolves `QDay.locations.json`, which is
+  not in the shadow cache - so it was never found and the mod silently ran on the
+  hardcoded `Defaults` string. Every edit to locations.json has been discarded.**
+  That matters because the chip coordinates in this file are listed above as
+  unverified and expected to be corrected here. Recovered proof from the cache:
+      locations: NO file found next to the script, using hardcoded Defaults
+  After the fix (ask `AppDomain.CurrentDomain.BaseDirectory`, never
+  `Assembly.Location`):
+      scripts dir: ...\Grand Theft Auto V\scripts (resolved via AppDomain.BaseDirectory (has locations file))
+      locations loaded from ...\scripts\QDay.locations.json
+- **The riot, at last (#5).** Cause was not `SET_RIOT_MODE_ENABLED`. It was that
+  `BeginThreshold` started THUNDER and then waited on the IBM queue for up to
+  900s with the player frozen; a storm clears pedestrians, so by the time the
+  arming loop ran there was nobody left, and the loop only reached 60m.
+  Measured BEFORE: F7 + F8 to Legion Square, normally one of the busiest spots on
+  the map - **one** ped at Q-Day start, and 45s later that ped was dead and the
+  plaza was empty.
+  AFTER (storm held until somebody is armed, radius 60m -> 150m):
+      riot pass: 25 peds within 150m, armed 19 this pass, 19 total
+      riot: 19 armed, starting the storm
+      riot pass: 21 peds within 150m, armed  7 this pass, 33 total
+      ... 64 total armed and still climbing
+  In-range count churns from 25 down to 6-9 while new peds keep arriving and
+  being armed - i.e. attrition. The riot is running.
+
+### FIXED but NOT verified in game - needs a real play session
+- **The riot relationship-group order (#2).** `Chaos.EnsureRelationships()` was
+  called AFTER peds were assigned to the group it creates, so the first wave got
+  a default (hash 0) group and had no reason to fight - and was never revisited,
+  because the loop only touches peds that are still Unarmed. Correct by
+  inspection and now in the build that produced the numbers above, but "are they
+  fighting each other, specifically because of the relationship group" was not
+  isolated visually.
+- **The Delivery soft-lock (#3).** The truck IS the chip; delivery only completed
+  while the player sat in that exact truck, and nothing noticed if it stopped
+  existing - no timeout, no respawn. A truck destroyed on the way back left the
+  mission waiting forever on an unsatisfiable marker, escapable only with F10, a
+  debug key. Now fails cleanly (message, fade, full teardown, back to Idle, F9 to
+  restart). **Not verified: reproducing it needs a truck destroyed during a live
+  delivery run, which is real driving, not keystrokes.**
+
+### Operational notes for anyone driving this box headlessly
+- Script Hook V pops a modal "CHECK FOR SCRIPT HOOK V UPDATES?" that blocks
+  GTA5.exe before SHV initialises. Answer No (we are pinned to 1.0.3889).
+- **The reload key is F11**, not Insert. `ScriptHookVDotNet.ini` says
+  `ReloadKeyBinding=F11`. CLAUDE.md is wrong about this.
+- GTA pauses whenever it loses input focus, and anything that steals focus (a
+  screenshot tool, a shell command) pauses it. While paused it ignores synthetic
+  keys, including Esc - so sequences must be sent from a single process.
+- The game waits on the MAIN MENU until STORY MODE is clicked; nothing loads and
+  SHVDN runs no scripts until then. The menu appears SEVERAL SECONDS AFTER SHV
+  logs "DX init succeeded", so clicking on that signal hits the loading screen.
+- **Menu click coordinates differ between fullscreen and windowed** (the window
+  has a title bar and the screen reports 1900 rather than 1964 high). Derive them
+  from a screenshot; do not hardcode.
+- **This box can build the mod.** .NET SDK 8.0.427 in `C:\Users\Shadow\.dotnet`
+  (installed with Microsoft's dotnet-install.ps1; winget/choco are blocked, exit
+  1602 = elevation declined). `dotnet build mod\QDay.csproj -c Release`, copy the
+  DLL in, press F11. QDay.dll is NOT locked while the game runs. The in-box
+  csc.exe is C# 5 only and cannot compile QDay.cs. CLAUDE.md's "build on the Mac"
+  is stale.
