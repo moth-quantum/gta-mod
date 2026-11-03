@@ -655,13 +655,113 @@ namespace QDay
     {
         public static string ScriptsDir;
         static string path;
+        static bool warned;
+
+        /// <summary>
+        /// Work out where scripts\ actually is.
+        ///
+        /// This used to be `Path.GetDirectoryName(typeof(Log).Assembly.Location)`.
+        /// **Assembly.Location is the wrong question under SHVDN**, which shadow-copies
+        /// script assemblies: for QDay.dll it returns something like
+        ///   %LOCALAPPDATA%\assembly\dl3\XN811RXO.2XM\...\QDay.dll
+        /// so the log was written into a .NET shadow-copy cache folder nobody would ever
+        /// look in. Measured on the test box: nine stale QDay.log files in there, and
+        /// none at all in scripts\. Write() swallowed every exception, so nothing said so.
+        ///
+        /// It is not only the log. ScriptsDir also resolves QDay.locations.json, which is
+        /// NOT in the shadow-copy cache -- so the lookup always missed and the mod fell
+        /// back to the hardcoded Defaults, silently ignoring every edit to locations.json.
+        /// That is confirmed in the recovered log:
+        ///   "locations: NO file found next to the script, using hardcoded Defaults"
+        ///
+        /// So: ask the AppDomain, not the assembly. SHVDN runs scripts in its own
+        /// ScriptDomain whose BaseDirectory IS scripts\ (measured:
+        /// "C:\...\Grand Theft Auto V\scripts", FriendlyName "SHVDN_ScriptDomain_...").
+        /// The candidates below cover that, plus the layouts other SHVDN versions might
+        /// use, and prefer whichever actually holds the locations file.
+        /// </summary>
+        static string ResolveScriptsDir(out string how)
+        {
+            var candidates = new List<KeyValuePair<string, string>>();
+            Action<string, string> add = (label, dir) =>
+            {
+                if (!string.IsNullOrEmpty(dir)) candidates.Add(new KeyValuePair<string, string>(label, dir));
+            };
+
+            try
+            {
+                var baseDir = AppDomain.CurrentDomain.BaseDirectory;   // SHVDN: this IS scripts\
+                add("AppDomain.BaseDirectory", baseDir);
+                if (!string.IsNullOrEmpty(baseDir)) add("AppDomain.BaseDirectory + scripts", Path.Combine(baseDir, "scripts"));
+            }
+            catch { }
+
+            try
+            {
+                var cwd = Directory.GetCurrentDirectory();             // the GTA V folder
+                if (!string.IsNullOrEmpty(cwd)) add("CurrentDirectory + scripts", Path.Combine(cwd, "scripts"));
+                add("CurrentDirectory", cwd);
+            }
+            catch { }
+
+            // First choice: a candidate that actually contains the locations file, since
+            // that is the thing whose absence was silently changing the mission.
+            foreach (var c in candidates)
+            {
+                try
+                {
+                    if (Directory.Exists(c.Value) &&
+                        (File.Exists(Path.Combine(c.Value, "QDay.locations.json")) ||
+                         File.Exists(Path.Combine(c.Value, "locations.json"))))
+                    { how = c.Key + " (has locations file)"; return c.Value; }
+                }
+                catch { }
+            }
+
+            // Otherwise the first one that exists, so the log still lands somewhere sane.
+            foreach (var c in candidates)
+            {
+                try { if (Directory.Exists(c.Value)) { how = c.Key; return c.Value; } }
+                catch { }
+            }
+
+            how = "temp (no scripts folder found)";
+            return Path.GetTempPath();
+        }
+
         public static void Init()
         {
-            ScriptsDir = Path.GetDirectoryName(typeof(Log).Assembly.Location) ?? ".";
+            string how;
+            ScriptsDir = ResolveScriptsDir(out how);
             path = Path.Combine(ScriptsDir, "QDay.log");
-            File.AppendAllText(path, $"\n==== {DateTime.Now:yyyy-MM-dd HH:mm:ss} ====\n");
+            // Record how the folder was resolved, and what Assembly.Location actually
+            // said, so this is diagnosable from the log itself next time.
+            string loc;
+            try { loc = typeof(Log).Assembly.Location; } catch (Exception e) { loc = "<threw: " + e.Message + ">"; }
+            if (string.IsNullOrEmpty(loc)) loc = "<empty>";
+            TryWrite($"\n==== {DateTime.Now:yyyy-MM-dd HH:mm:ss} ====\n"
+                   + $"scripts dir: {ScriptsDir}  (resolved via {how}; Assembly.Location = {loc})\n");
         }
-        public static void Write(string s) { try { File.AppendAllText(path, $"{DateTime.Now:HH:mm:ss.fff} {s}\n"); } catch { } }
+
+        public static void Write(string s) { TryWrite($"{DateTime.Now:HH:mm:ss.fff} {s}\n"); }
+
+        /// <summary>
+        /// Append, and if it fails say so once in game rather than swallowing it. A mod
+        /// whose log silently does not exist costs far more time than a one-off warning.
+        /// </summary>
+        static void TryWrite(string text)
+        {
+            try
+            {
+                File.AppendAllText(path, text);
+            }
+            catch (Exception e)
+            {
+                if (warned) return;
+                warned = true;
+                try { Notification.Show($"~r~Q-DAY:~s~ cannot write log to {path} -- {e.Message}"); } catch { }
+            }
+        }
     }
 
     public class Locations
@@ -675,7 +775,13 @@ namespace QDay
             var l = new Locations();
             var p = Path.Combine(Log.ScriptsDir, "QDay.locations.json");
             if (!File.Exists(p)) p = Path.Combine(Log.ScriptsDir, "locations.json");
-            var json = File.Exists(p) ? File.ReadAllText(p) : Defaults;
+            bool fromFile = File.Exists(p);
+            var json = fromFile ? File.ReadAllText(p) : Defaults;
+            // Say which source won. Falling back to Defaults silently meant edits to
+            // locations.json had no effect and nothing reported it.
+            Log.Write(fromFile
+                ? "locations loaded from " + p
+                : "locations: NO file found next to the script, using hardcoded Defaults (looked in " + Log.ScriptsDir + ")");
             // tiny hand parser: we control the file shape
             l.Lab = new Site { Pos = Vec(json, "\"lab\"", "\"pos\""), TruckSpawn = Vec(json, "\"lab\"", "\"truck_spawn\"") };
             l.Ending = Vec(json, "\"ending\"", "\"pos\"");
