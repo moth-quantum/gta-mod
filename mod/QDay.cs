@@ -260,11 +260,16 @@ namespace QDay
             Function.Call(Hash.SET_WEATHER_TYPE_NOW_PERSIST, "THUNDER");
             Function.Call(Hash.SET_CREATE_RANDOM_COPS, false);
             BuildTicker(r);
+            armed = 0; lastArmedCount = -1;
             Hud.BigMessage("Q-DAY", $"Bell S = {r.S:0.00} > 2    every key on earth is public");
             Log.Write($"Q-DAY. S={r.S} commit={r.Commit} backend={r.Backend} certified={r.Certified}");
         }
 
         DateTime lastArm = DateTime.MinValue;
+        // Riot diagnostics: the riot has been hard to observe, so record how many peds
+        // the arming loop actually found. Zero here means there was nobody to arm
+        // (see the note in BeginQDay about the storm and the lab's location).
+        int armed = 0, lastArmedCount = -1;
         void TickQDay()
         {
             // Money does not exist any more.
@@ -276,6 +281,12 @@ namespace QDay
             if ((DateTime.UtcNow - lastArm).TotalSeconds > 2)
             {
                 lastArm = DateTime.UtcNow;
+                // MUST come before the loop: EnsureRelationships is what creates the
+                // QDAY_RIOT group. Called afterwards, the first pass assigned peds a
+                // default (hash 0) group, so they got weapons but none of the
+                // hate-everyone relationships - and they were never revisited, because
+                // the loop only touches peds that are still Unarmed.
+                Chaos.EnsureRelationships();
                 var me = Game.Player.Character;
                 foreach (var p in World.GetNearbyPeds(me, 60f))
                 {
@@ -289,9 +300,10 @@ namespace QDay
                         Function.Call(Hash.SET_PED_FLEE_ATTRIBUTES, p, 0, false);
                         Function.Call(Hash.SET_CAN_ATTACK_FRIENDLY, p, true, true);
                         p.RelationshipGroup = Chaos.RiotGroup;
+                        armed++;
                     }
                 }
-                Chaos.EnsureRelationships();
+                if (armed != lastArmedCount) { Log.Write($"Q-Day riot: {armed} peds armed so far"); lastArmedCount = armed; }
             }
             Hud.Ticker(ticker);
             if (Elapsed() > 300) BeginEnding();
