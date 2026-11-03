@@ -160,6 +160,10 @@ namespace QDay
                 truck = World.CreateVehicle(VehicleHash.Mule, ped.Position + ped.ForwardVector * 5f, ped.Heading);
                 if (truck == null) { Log.Write("truck spawn failed"); return; }
                 truck.PlaceOnGround();
+                // Keep the engine from streaming the truck out when the player gets far
+                // from it. Without this, "the truck no longer exists" below could mean
+                // "despawned" rather than "destroyed", and fail the mission unfairly.
+                truck.IsPersistent = true;
                 truckHealthAtPickup = truck.BodyHealth;
                 Function.Call(Hash.SET_PLAYER_WANTED_LEVEL, Game.Player, chip.Wanted, false);
                 Function.Call(Hash.SET_PLAYER_WANTED_LEVEL_NOW, Game.Player, false);
@@ -175,13 +179,25 @@ namespace QDay
         void TickDelivery()
         {
             var ped = Game.Player.Character;
-            if (truck != null && truck.Exists())
+
+            // The truck IS the chip. Delivery only completed while the player was sitting
+            // in that exact truck, and nothing anywhere noticed if it stopped existing:
+            // there is no timeout on this phase and nothing respawns it, so a truck
+            // destroyed during the escape left the mission waiting forever on a marker
+            // the player could never satisfy. The only way out was F10, a debug key.
+            // Losing the chip ends the run.
+            if (truck == null || !truck.Exists() || truck.IsDead)
             {
-                // Body damage since pickup -> up to +5% on the error meter. Honest and visible.
-                var lost = Math.Max(0, truckHealthAtPickup - truck.BodyHealth);
-                damagePenalty = Math.Min(0.05, lost / 1000.0 * 0.05);
+                FailMission("the chip was destroyed with the truck");
+                return;
             }
-            bool inTruck = truck != null && truck.Exists() && ped.IsInVehicle(truck);
+
+            // Body damage since pickup -> up to +5% on the error meter. Honest and visible.
+            // (The guard above has already established that the truck exists.)
+            var lost = Math.Max(0, truckHealthAtPickup - truck.BodyHealth);
+            damagePenalty = Math.Min(0.05, lost / 1000.0 * 0.05);
+
+            bool inTruck = ped.IsInVehicle(truck);
             if (inTruck && ped.Position.DistanceTo(loc.Lab.Pos) < 12f)
             {
                 var chip = loc.Chips[chipIndex];
@@ -330,6 +346,25 @@ namespace QDay
         // ---- helpers -------------------------------------------------------------
         void SetPhase(Phase p) { phase = p; phaseStarted = DateTime.UtcNow; Log.Write("phase -> " + p); }
         double Elapsed() => (DateTime.UtcNow - phaseStarted).TotalSeconds;
+
+        /// <summary>
+        /// End the run as a failure: say why, fade out, tear everything down and go back
+        /// to Idle so F9 starts again from the beginning. No checkpoint, no auto-restart.
+        /// </summary>
+        void FailMission(string reason)
+        {
+            Log.Write("MISSION FAILED: " + reason);
+            // Reset() does NOT clear the wanted level, and delivery runs at 3-5 stars,
+            // so without this the player is left being hunted after the mission ends.
+            Game.Player.WantedLevel = 0;
+            Hud.BigMessage("MISSION FAILED", reason);
+            Wait(2500);                      // let it be read before the screen goes
+            Screen.FadeOut(1500);
+            Wait(1800);
+            Reset();                         // blip, truck, weather, cash, control -> Idle
+            Screen.FadeIn(1500);
+            Screen.ShowSubtitle("~r~Mission failed.~s~ Press ~b~F9~s~ to start again.", 6000);
+        }
 
         void Reset()
         {
