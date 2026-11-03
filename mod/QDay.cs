@@ -39,7 +39,6 @@ namespace QDay
         AtlasResult lastResult;            // latest sidecar result, written by the bridge thread
         Random rng = new Random();         // replaced by Atlas bytes on Q-Day
         readonly List<string> ticker = new List<string>();
-        int tickerIndex = 0; float tickerX = 1.0f;
         readonly Locations loc;
         readonly Bridge bridge;
 
@@ -294,13 +293,14 @@ namespace QDay
                 }
                 Chaos.EnsureRelationships();
             }
-            Hud.Ticker(ticker, ref tickerIndex, ref tickerX);
+            Hud.Ticker(ticker);
             if (Elapsed() > 300) BeginEnding();
         }
 
         void BuildTicker(AtlasResult r)
         {
             ticker.Clear();
+            Hud.ResetTicker();
             var lines = new List<string>(Chaos.Leaks);
             // shuffle with Atlas bytes
             for (int i = lines.Count - 1; i > 0; i--) { int j = rng.Next(i + 1); var t = lines[i]; lines[i] = lines[j]; lines[j] = t; }
@@ -340,6 +340,7 @@ namespace QDay
             Function.Call(Hash.CLEAR_WEATHER_TYPE_PERSIST);
             blip?.Delete(); blip = null;
             truck?.MarkAsNoLongerNeeded(); truck = null;
+            ticker.Clear(); Hud.ResetTicker();
             chipIndex = 0; logicalQubits = 0; errorRate = double.NaN; damagePenalty = 0; lastResult = null;
             phase = Phase.Idle;
         }
@@ -507,15 +508,86 @@ namespace QDay
                 new TextElement(phase == Phase.Threshold ? "IBM hardware queue..." : "calibrating on Atlas...", new PointF(950, 212), 0.34f, Color.LightBlue, Font.ChaletLondon, Alignment.Left).Draw();
         }
 
-        public static void Ticker(List<string> lines, ref int index, ref float x)
+        // ---- the leak ticker ------------------------------------------------
+        // A news crawl, built as a belt: messages laid end to end, each with its own
+        // MEASURED width. Three things this gets right that the first version did not:
+        //   1. it advances by REAL TIME (Game.LastFrameTime), not a fixed step per
+        //      frame, so the speed is identical at 30, 60 or 144 fps. The old
+        //      `x -= 0.004f` every frame made the crawl track the framerate and
+        //      lurch on every dip - the main reason it looked broken.
+        //   2. items retire on their own measured width, so the text never snaps
+        //      back to the right edge mid-sentence and the bar is never empty.
+        //   3. the text is given a huge wrap width: by default GTA WRAPS text that
+        //      reaches the right edge onto a second line underneath the bar.
+        // SHVDN UI elements use a fixed 1280x720 canvas, not the real resolution.
+        class TickerItem { public string Text; public float W; }
+        static readonly List<TickerItem> belt = new List<TickerItem>();
+        static float tickerOffset;
+        static int tickerFeed;
+
+        const float CanvasW = 1280f, CanvasH = 720f;
+        const float TickerBarH  = 18f;     // thin enough to sit clear of the minimap
+        const float TickerScale = 0.28f;   // matched to the bar height
+        const float TickerSpeed = 150f;    // canvas pixels per SECOND
+        const float TickerGap   = 60f;     // space between messages
+        const float NoWrap      = 6000f;   // effectively disables GTA's text wrapping
+        const string TickerSep  = "  •  ";
+        static readonly Color TickerBarCol  = Color.FromArgb(205, 100, 0, 0);
+        static readonly Color TickerEdgeCol = Color.FromArgb(230, 190, 30, 30);
+        static readonly Color TickerTextCol = Color.FromArgb(255, 255, 240, 235);
+
+        /// <summary>Clear the crawl so a new Q-Day starts from the beginning.</summary>
+        public static void ResetTicker() { belt.Clear(); tickerOffset = 0f; tickerFeed = 0; }
+
+        static float MeasureTicker(string s)
+        {
+            var t = new TextElement(s, new PointF(0, 0), TickerScale, TickerTextCol,
+                                    Font.ChaletLondon, Alignment.Left, false, true, NoWrap);
+            float w = t.Width;
+            return w > 0f ? w : s.Length * TickerScale * 16f;   // metrics fallback
+        }
+
+        public static void Ticker(List<string> lines)
         {
             if (lines.Count == 0) return;
-            // SHVDN UI elements use a fixed 1280x720 canvas, not the real resolution.
-            const float w = 1280f, h = 720f;
-            new ContainerElement(new PointF(0, h - 48), new SizeF(w, 40), Color.FromArgb(200, 120, 0, 0)).Draw();
-            new TextElement(lines[index % lines.Count], new PointF(x * w, h - 44), 0.55f, Color.White, Font.Monospace, Alignment.Left).Draw();
-            x -= 0.004f;
-            if (x < -0.6f) { x = 1.0f; index++; }
+
+            float dt = Game.LastFrameTime;
+            if (dt <= 0f || dt > 0.5f) dt = 1f / 60f;           // guard pauses and hitches
+
+            // Keep the belt long enough to cover the screen plus a lead-in.
+            float total = 0f;
+            for (int i = 0; i < belt.Count; i++) total += belt[i].W;
+            int guard = 0;
+            while (total < CanvasW * 2f && guard++ < 40)
+            {
+                var text = lines[tickerFeed++ % lines.Count] + TickerSep;
+                var item = new TickerItem { Text = text, W = MeasureTicker(text) + TickerGap };
+                belt.Add(item);
+                total += item.W;
+            }
+
+            tickerOffset += TickerSpeed * dt;
+            while (belt.Count > 0 && tickerOffset >= belt[0].W)
+            {
+                tickerOffset -= belt[0].W;                       // keeps the offset bounded
+                belt.RemoveAt(0);
+            }
+
+            float barY = CanvasH - TickerBarH;
+            new ContainerElement(new PointF(0, barY), new SizeF(CanvasW, TickerBarH), TickerBarCol).Draw();
+            new ContainerElement(new PointF(0, barY), new SizeF(CanvasW, 1.5f), TickerEdgeCol).Draw();
+
+            float textH = TickerScale * 36f;
+            float ty = barY + (TickerBarH - textH) * 0.5f;       // centre the glyphs in the bar
+            float x = -tickerOffset;
+            for (int i = 0; i < belt.Count && x < CanvasW; i++)
+            {
+                var item = belt[i];
+                if (x + item.W > 0f)
+                    new TextElement(item.Text, new PointF(x, ty), TickerScale, TickerTextCol,
+                                    Font.ChaletLondon, Alignment.Left, false, true, NoWrap).Draw();
+                x += item.W;
+            }
         }
 
         public static void BigMessage(string title, string sub)
