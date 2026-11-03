@@ -240,7 +240,10 @@ namespace QDay
             SetPhase(Phase.Threshold);
             Function.Call(Hash.SET_PLAYER_CONTROL, Game.Player, false, 0);
             Function.Call(Hash.SHAKE_GAMEPLAY_CAM, "SMALL_EXPLOSION_SHAKE", 0.3f);
-            Function.Call(Hash.SET_WEATHER_TYPE_NOW_PERSIST, "THUNDER");
+            // The storm used to start HERE, then run for the whole IBM queue (up to 900s)
+            // with the player frozen in place. A thunderstorm clears the streets, so by
+            // the time the riot began there was nobody left to arm. It now starts in
+            // TickQDay, once peds have actually been armed. See StartStormWhenArmed.
             bridge.Request("qday", new Dictionary<string, object> { ["kind"] = "qday" });
             Hud.BigMessage("THRESHOLD", "factoring RSA-2048 on IBM hardware...");
             Log.Write("threshold: qpu job requested");
@@ -258,14 +261,24 @@ namespace QDay
             Function.Call(Hash.SET_PLAYER_CONTROL, Game.Player, true, 0);
             Function.Call(Hash.ANIMPOSTFX_PLAY, "DeathFailMPIn", 1500, false);
             Function.Call(Hash.SET_RIOT_MODE_ENABLED, true);
-            Function.Call(Hash.SET_WEATHER_TYPE_NOW_PERSIST, "THUNDER");
+            // Deliberately NOT starting the storm here either -- it waits until the first
+            // arming pass has found people. Keeping the streets populated long enough to
+            // arm them is what makes the riot visible at all.
             Function.Call(Hash.SET_CREATE_RANDOM_COPS, false);
+            stormStarted = false;
+            armedTotal = 0;
             BuildTicker(r);
             Hud.BigMessage("Q-DAY", $"Bell S = {r.S:0.00} > 2    every key on earth is public");
             Log.Write($"Q-DAY. S={r.S} commit={r.Commit} backend={r.Backend} certified={r.Certified}");
         }
 
         DateTime lastArm = DateTime.MinValue;
+        bool stormStarted;          // the storm is held back until people are armed
+        int armedTotal;             // how many peds the riot has actually reached
+        // 60m was too tight: it only covered what was almost on top of the player, and
+        // the arming pass regularly found nobody at all.
+        const float ArmRadius = 150f;
+
         void TickQDay()
         {
             // Money does not exist any more.
@@ -278,8 +291,10 @@ namespace QDay
             {
                 lastArm = DateTime.UtcNow;
                 var me = Game.Player.Character;
-                foreach (var p in World.GetNearbyPeds(me, 60f))
+                int armedThisPass = 0, candidates = 0;
+                foreach (var p in World.GetNearbyPeds(me, ArmRadius))
                 {
+                    candidates++;
                     if (p == me || !p.IsHuman || p.IsDead) continue;
                     if (p.Weapons.Current.Hash == WeaponHash.Unarmed)
                     {
@@ -290,9 +305,23 @@ namespace QDay
                         Function.Call(Hash.SET_PED_FLEE_ATTRIBUTES, p, 0, false);
                         Function.Call(Hash.SET_CAN_ATTACK_FRIENDLY, p, true, true);
                         p.RelationshipGroup = Chaos.RiotGroup;
+                        armedThisPass++;
                     }
                 }
                 Chaos.EnsureRelationships();
+
+                armedTotal += armedThisPass;
+                Log.Write($"riot pass: {candidates} peds within {ArmRadius}m, armed {armedThisPass} this pass, {armedTotal} total");
+
+                // Only now let the weather turn. Starting the storm earlier emptied the
+                // streets before anyone could be armed, which is why the riot was never
+                // seen. Keep the storm - just start it once there is a riot to look at.
+                if (!stormStarted && armedTotal > 0)
+                {
+                    stormStarted = true;
+                    Function.Call(Hash.SET_WEATHER_TYPE_NOW_PERSIST, "THUNDER");
+                    Log.Write($"riot: {armedTotal} armed, starting the storm");
+                }
             }
             Hud.Ticker(ticker, ref tickerIndex, ref tickerX);
             if (Elapsed() > 300) BeginEnding();
@@ -340,7 +369,11 @@ namespace QDay
             Function.Call(Hash.CLEAR_WEATHER_TYPE_PERSIST);
             blip?.Delete(); blip = null;
             truck?.MarkAsNoLongerNeeded(); truck = null;
+            // Delivery runs at 3-5 stars. Without this, aborting with F10 mid-delivery
+            // ended the mission but left the player being hunted by the military.
+            Game.Player.WantedLevel = 0;
             chipIndex = 0; logicalQubits = 0; errorRate = double.NaN; damagePenalty = 0; lastResult = null;
+            stormStarted = false; armedTotal = 0;
             phase = Phase.Idle;
         }
     }
