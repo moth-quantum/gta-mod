@@ -30,5 +30,20 @@ To change the mission, edit `mod/QDay.cs`, rebuild (`dotnet build` in `mod/`), a
 - Never put the Atlas key in a file. It lives in the `MOTH_API_TOKEN` environment variable.
 - Story mode only. Never open GTA Online with the mod installed.
 
-## Status (23 Oct 2026)
-The game starts with the mod installed. First in-game run of the mission is next. Deadline: 19 Nov 2026.
+## Status (3 Nov 2026)
+The mission runs end to end in story mode. The leak ticker now scrolls at a
+constant speed independent of framerate, and the Q-Day riot has been seen for the
+first time: 64 pedestrians armed, where the previous attempt found one. The mod's
+own log finally lands in `scripts\QDay.log`, which also means `QDay.locations.json`
+is read at last — until now the mod silently ran on hardcoded defaults and every
+edit to that file was discarded, so the chip coordinates still need verifying
+in-game before they can be trusted.
+
+Still to do: the three heists need their own locations, guards and exits; the
+escape (roadblocks, briefcase, plane) is unbuilt; two cutscenes are outstanding.
+Open playtest items are tracked as GitHub issues. Deadline: 19 Nov 2026.
+
+Build on any machine with the .NET SDK — the Windows gaming PC is easiest:
+`dotnet build` in `mod/`, copy `bin/QDay.dll` and `locations.json` (as
+`QDay.locations.json`) into `GTAV/scripts/`, then press **F11** in game to reload
+scripts (not Insert).
