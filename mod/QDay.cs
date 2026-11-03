@@ -304,7 +304,14 @@ namespace QDay
             var lines = new List<string>(Chaos.Leaks);
             // shuffle with Atlas bytes
             for (int i = lines.Count - 1; i > 0; i--) { int j = rng.Next(i + 1); var t = lines[i]; lines[i] = lines[j]; lines[j] = t; }
-            ticker.Add($"KEY {r.Commit?.Substring(0, Math.Min(16, (r.Commit ?? "").Length))}... FACTORED ON {r.Backend?.ToUpper()}");
+            // A live Atlas result can come back without a commit hash or backend (the
+            // recorded fallback always has both). The null-conditionals used to collapse
+            // to nothing, leaving the headline reading "KEY ... FACTORED ON " with gaps.
+            var commit = string.IsNullOrEmpty(r.Commit)
+                ? "UNVERIFIED"
+                : r.Commit.Substring(0, Math.Min(16, r.Commit.Length)) + "...";
+            var backend = string.IsNullOrEmpty(r.Backend) ? "IBM HARDWARE" : r.Backend.ToUpper();
+            ticker.Add($"KEY {commit} FACTORED ON {backend}");
             ticker.AddRange(lines);
         }
 
