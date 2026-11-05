@@ -1,6 +1,6 @@
 // Q-DAY: a GTA V mission where the player builds a fault-tolerant quantum computer
 // out of stolen hardware, it factors every key on earth, and San Andreas loses its mind.
-// Every number on the HUD comes from Moth Atlas via the sidecar (see ../sidecar).
+// Every number on the HUD comes from Moth Atlas (see Atlas.cs).
 //
 // Build: dotnet build   ->   bin/QDay.dll   ->   GTAV/scripts/QDay.dll
 // In game: F9 starts the mission, Insert reloads SHVDN scripts.
@@ -36,25 +36,31 @@ public class QDayScript : Script
     float truckHealthAtPickup;
     Blip blip;
     DateTime phaseStarted = DateTime.UtcNow;
-    AtlasResult lastResult;            // latest sidecar result, written by the bridge thread
+    AtlasResult lastResult;            // latest Atlas result, taken on the script thread
     Random rng = new Random();         // replaced by Atlas bytes on Q-Day
     readonly List<string> ticker = new List<string>();
     static readonly Locations loc = Locations.Default;
-    readonly Bridge bridge;
+    readonly Atlas atlas;
     readonly bool debug;               // [General] Debug in scripts\QDay.ini: enables the F5-F8 playtest keys
 
     public QDayScript()
     {
         Log.Init(BaseDirectory);
-        bridge = new Bridge(Log.Write);
+        // [Atlas] ApiKey in QDay.ini; no key or Offline = true plays from the recorded results.
+        atlas = new Atlas(Settings.GetValue("Atlas", "ApiKey", ""), Settings.GetValue("Atlas", "Offline", false));
+        Aborted += (s, e) => atlas.Dispose();
         Tick += OnTick;
         KeyDown += OnKeyDown;
         Interval = 0;
         debug = Settings.GetValue("General", "Debug", false);
-        Log.Write($"Q-DAY loaded. F9 to start. debug={debug}");
-        Notification.Show(debug
-            ? "~b~Q-DAY~s~ loaded. F9 start, F10 abort. ~y~DEBUG:~s~ F5 teleport, F6 skip wait, F7 Q-Day now, F8 Legion Square."
-            : "~b~Q-DAY~s~ loaded. F9 start, F10 abort.");
+        Log.Write($"Q-DAY loaded. debug={debug}");
+
+        string startupMsg = "~b~Q-DAY~s~ loaded.~n~  F9 start~n~  F10 abort";
+        if (debug)
+        {
+          startupMsg += "~n~~y~DEBUG:~s~~n~  F5 teleport~n~  F6 skip wait~n~  F7 Q-Day now~n~  F8 Legion Square";
+        }
+        Notification.Show(startupMsg);
     }
 
     // ---- input ---------------------------------------------------------------
@@ -97,7 +103,7 @@ public class QDayScript : Script
     // ---- main loop -----------------------------------------------------------
     void OnTick(object sender, EventArgs e)
     {
-        var r = bridge.Take();
+        var r = atlas.Take();
         if (r != null) { lastResult = r; OnAtlasResult(r); }
 
         switch (phase)
@@ -207,7 +213,7 @@ public class QDayScript : Script
             Game.Player.WantedLevel = 0;
             blip?.Delete();
             SetPhase(Phase.Calibrating);
-            bridge.Request("cal" + chipIndex, new Dictionary<string, object> { ["kind"] = "calibrate", ["chip"] = chip.Key });
+            atlas.Calibrate("cal" + chipIndex, chip.Key);
             Screen.ShowSubtitle("~b~Lester:~s~ Installing. Calibrating on the real noise model...", 5000);
             Log.Write($"delivered {chip.Key}, penalty {damagePenalty:P2}, calibrating");
         }
@@ -215,13 +221,13 @@ public class QDayScript : Script
 
     void TickCalibrating()
     {
-        // Waiting for the sidecar. Result handled in OnAtlasResult. Timeout keeps the demo alive.
+        // Waiting for Atlas. Result handled in OnAtlasResult. Timeout keeps the demo alive.
         if (Elapsed() > 180) { Log.Write("calibration timeout"); errorRate = 0.1; AfterCalibration(); }
     }
 
     void OnAtlasResult(AtlasResult r)
     {
-        Log.Write($"atlas result {r.Name}: {r.Raw}");
+        Log.Write($"atlas result {r.Name}: {r}");
         if (r.Status != "done") { if (r.Status == "error") Log.Write("atlas error: " + r.Message); return; }
         if (r.Kind == "calibrate" && phase == Phase.Calibrating)
         {
@@ -263,7 +269,7 @@ public class QDayScript : Script
         // with the player frozen in place. A thunderstorm clears the streets, so by
         // the time the riot began there was nobody left to arm. It now starts in
         // TickQDay, once peds have actually been armed. See StartStormWhenArmed.
-        bridge.Request("qday", new Dictionary<string, object> { ["kind"] = "qday" });
+        atlas.QDay("qday");
         Hud.BigMessage("THRESHOLD", "factoring RSA-2048 on IBM hardware...");
         Log.Write("threshold: qpu job requested");
     }
@@ -427,116 +433,6 @@ public class QDayScript : Script
         chipIndex = 0; logicalQubits = 0; errorRate = double.NaN; damagePenalty = 0; lastResult = null;
         stormStarted = false; armedTotal = 0;
         phase = Phase.Idle;
-    }
-}
-
-// ---- the Atlas bridge: a folder of JSON files shared with the Python sidecar --------
-public class AtlasResult
-{
-    public string Name, Status, Kind, Message, Raw, Commit, Backend, JobId, Grade;
-    public double ErrorRate = double.NaN, S = double.NaN;
-    public bool Certified;
-    public List<int> Ints;
-
-    public static AtlasResult Parse(string name, string json)
-    {
-        var r = new AtlasResult { Name = name, Raw = json };
-        r.Status = Json.Str(json, "status"); r.Kind = Json.Str(json, "kind"); r.Message = Json.Str(json, "message");
-        r.Commit = Json.Str(json, "commit"); r.Backend = Json.Str(json, "backend"); r.JobId = Json.Str(json, "job_id"); r.Grade = Json.Str(json, "grade");
-        r.ErrorRate = Json.Num(json, "error_rate"); r.S = Json.Num(json, "S"); r.Certified = Json.Str(json, "certified") == "true";
-        r.Ints = Json.IntList(json, "ints");
-        if (r.Kind == null) r.Kind = name.StartsWith("cal") ? "calibrate" : name;
-        return r;
-    }
-
-    public static AtlasResult Recorded() => new AtlasResult { Name = "qday", Status = "done", Kind = "qday", S = 2.711, Commit = "40bb90660f941c13f6ccc0d1998adfce33daa061d50459b0719ad999c93352f2", Backend = "ibm_marrakesh", JobId = "6eb8fa80-d13f-4f28-8b1b-f8fb7057f16b", Certified = true, Grade = "hardware-accounted" };
-}
-
-public class Bridge
-{
-    readonly string dir;
-    readonly Action<string> log;
-    readonly Queue<AtlasResult> inbox = new Queue<AtlasResult>();
-    readonly HashSet<string> seen = new HashSet<string>();
-    readonly object gate = new object();
-
-    public Bridge(Action<string> log)
-    {
-        this.log = log;
-        dir = Environment.GetEnvironmentVariable("QDAY_BRIDGE");
-        if (string.IsNullOrEmpty(dir)) dir = Directory.Exists(@"C:\gta-mod\bridge") ? @"C:\gta-mod\bridge" : Path.Combine(Log.ScriptsDir, "qday_bridge");
-        Directory.CreateDirectory(dir);
-        var t = new Thread(Poll) { IsBackground = true }; t.Start();
-        log("bridge dir " + dir);
-    }
-
-    public void Request(string name, Dictionary<string, object> body)
-    {
-        var path = Path.Combine(dir, "request_" + name + ".json");
-        var res = Path.Combine(dir, "result_" + name + ".json");
-        if (File.Exists(res)) File.Delete(res);
-        lock (gate) seen.Remove(name);
-        File.WriteAllText(path + ".tmp", Json.Obj(body)); File.Move(path + ".tmp", path);
-        log("request " + name + " " + Json.Obj(body));
-    }
-
-    public AtlasResult Take() { lock (gate) return inbox.Count > 0 ? inbox.Dequeue() : null; }
-
-    void Poll()
-    {
-        while (true)
-        {
-            try
-            {
-                foreach (var f in Directory.GetFiles(dir, "result_*.json"))
-                {
-                    var name = Path.GetFileNameWithoutExtension(f).Substring("result_".Length);
-                    var json = File.ReadAllText(f);
-                    var status = Json.Str(json, "status");
-                    if (status != "done" && status != "error") continue;
-                    lock (gate)
-                    {
-                        if (seen.Contains(name)) continue;
-                        seen.Add(name);
-                        inbox.Enqueue(AtlasResult.Parse(name, json));
-                    }
-                }
-            }
-            catch (Exception e) { log("bridge poll error: " + e.Message); }
-            Thread.Sleep(500);
-        }
-    }
-}
-
-// Minimal JSON helpers so the DLL has no dependencies beyond SHVDN.
-public static class Json
-{
-    public static string Str(string json, string key)
-    {
-        var k = "\"" + key + "\":"; var i = json.IndexOf(k, StringComparison.Ordinal); if (i < 0) return null;
-        i += k.Length; while (i < json.Length && json[i] == ' ') i++;
-        if (json[i] == '"') { var j = json.IndexOf('"', i + 1); return json.Substring(i + 1, j - i - 1); }
-        var e = i; while (e < json.Length && ",}]".IndexOf(json[e]) < 0) e++;
-        return json.Substring(i, e - i).Trim();
-    }
-    public static double Num(string json, string key)
-    {
-        var s = Str(json, key); double d;
-        return s != null && double.TryParse(s, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out d) ? d : double.NaN;
-    }
-    public static List<int> IntList(string json, string key)
-    {
-        var k = "\"" + key + "\":"; var i = json.IndexOf(k, StringComparison.Ordinal); if (i < 0) return null;
-        var a = json.IndexOf('[', i); var b = json.IndexOf(']', a); if (a < 0 || b < 0) return null;
-        var list = new List<int>();
-        foreach (var p in json.Substring(a + 1, b - a - 1).Split(',')) { int v; if (int.TryParse(p.Trim(), out v)) list.Add(v); }
-        return list;
-    }
-    public static string Obj(Dictionary<string, object> d)
-    {
-        var parts = new List<string>();
-        foreach (var kv in d) parts.Add("\"" + kv.Key + "\": " + (kv.Value is string ? "\"" + kv.Value + "\"" : kv.Value.ToString()));
-        return "{" + string.Join(", ", parts) + "}";
     }
 }
 

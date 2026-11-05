@@ -11,7 +11,8 @@
     <RootNamespace>QDay</RootNamespace>
     <OutputPath>bin</OutputPath>
     <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
-    <CopyLocalLockFileAssemblies>false</CopyLocalLockFileAssemblies>
+    <!-- Copy System.Text.Json and its dependencies to bin so ILRepack.targets can merge them into QDay.dll. -->
+    <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
     <GenerateAssemblyInfo>true</GenerateAssemblyInfo>
     <Nullable>disable</Nullable>
     <WarningLevel>4</WarningLevel>
@@ -20,12 +21,22 @@
   <ItemGroup>
     <!-- Reference assemblies let net48 compile without a Windows install -->
     <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" PrivateAssets="all" />
-    <PackageReference Include="ScriptHookVDotNet3" Version="3.6.0" />
-    <PackageReference Include="LemonUI.SHVDN3" Version="2.2.0" />
+    <!-- Merges the NuGet dependencies into QDay.dll after build, see ILRepack.targets -->
+    <PackageReference Include="ILRepack.Lib.MSBuild.Task" Version="2.0.48" PrivateAssets="all" />
+    <!-- Compile against these only: the game provides its own copies. -->
+    <PackageReference Include="ScriptHookVDotNet3" Version="3.6.0" ExcludeAssets="runtime" />
+    <PackageReference Include="LemonUI.SHVDN3" Version="2.2.0" ExcludeAssets="runtime" />
+    <PackageReference Include="System.Text.Json" Version="10.0.14" />
   </ItemGroup>
 
   <ItemGroup>
     <Reference Include="System.Windows.Forms" />
+    <Reference Include="System.Net.Http" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Offline mode answers from these real Atlas results, so they ship inside the DLL. -->
+    <EmbeddedResource Include="..\recorded\graph_fake_*.json;..\recorded\qrng_qpu_64q_marrakesh.json" LogicalName="recorded.%(Filename)%(Extension)" />
   </ItemGroup>
 
 </Project>

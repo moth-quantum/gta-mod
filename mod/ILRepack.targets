@@ -1,0 +1,27 @@
+<Project>
+  <!-- Merge System.Text.Json and its dependencies into QDay.dll, so scripts\ only needs that one file.
+       Picked up automatically by ILRepack.Lib.MSBuild.Task (it replaces the package's default
+       Release-only target). Internalize makes the merged types internal to QDay.dll: all SHVDN
+       scripts share one AppDomain, so this keeps them from clashing with another mod's copies. -->
+  <Target Name="ILRepackDependencies" AfterTargets="Build">
+    <ItemGroup>
+      <MergedAssemblies Include="@(ReferenceCopyLocalPaths)" Condition="'%(Extension)' == '.dll'" />
+      <InputAssemblies Include="$(OutputPath)$(TargetName)$(TargetExt)" />
+      <InputAssemblies Include="@(MergedAssemblies)" />
+      <!-- Folders of compile-only references (ScriptHookVDotNet3, LemonUI, net48 facades) so ILRepack can resolve them. -->
+      <ReferenceDirs Include="@(ReferencePath->'%(RootDir)%(Directory)')" />
+    </ItemGroup>
+
+    <ILRepack
+        Parallel="true"
+        DebugInfo="true"
+        Internalize="true"
+        InputAssemblies="@(InputAssemblies)"
+        LibraryPath="@(ReferenceDirs->Distinct())"
+        TargetKind="SameAsPrimaryAssembly"
+        OutputFile="$(OutputPath)$(TargetName)$(TargetExt)" />
+
+    <!-- The merged DLLs were copied to bin only to be merged; drop them. -->
+    <Delete Files="@(MergedAssemblies->'$(OutDir)%(DestinationSubDirectory)%(Filename)%(Extension)')" />
+  </Target>
+</Project>

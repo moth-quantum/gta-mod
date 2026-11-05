@@ -6,4 +6,3 @@ iex ((New-Object Net.WebClient).DownloadString('https://community.chocolatey.org
 choco install -y googlechrome parsec steam git python nodejs-lts 7zip vcredist-all directx
 irm https://claude.ai/install.ps1 | iex
 mkdir C:\gta-mod\bridge -Force | Out-Null
-[Environment]::SetEnvironmentVariable('QDAY_BRIDGE','C:\gta-mod\bridge','User')

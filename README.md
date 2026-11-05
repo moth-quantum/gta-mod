@@ -10,8 +10,7 @@ The quantum computer is real: every error rate on screen comes from an Atlas job
 
 | Folder | What it is |
 | --- | --- |
-| `mod/` | The mission itself. `QDay.cs` is the game code (C#, ScriptHookVDotNet 3), with the logger in `Log.cs`. `bin/QDay.dll` is the built copy that goes in the game. Map positions are hardcoded in `Locations.Default` in `QDay.cs`. |
-| `sidecar/` | The helper program that talks to Atlas. The game writes a request file, the helper runs the job and writes the result back. It holds the Atlas key so the game never does. |
+| `mod/` | The mission itself. `QDay.cs` is the game code (C#, ScriptHookVDotNet 3), `Atlas.cs` talks to Atlas over HTTPS on background threads, and `Log.cs` is the logger. `bin/QDay.dll` is the built copy that goes in the game (its NuGet dependencies are merged in). Map positions are hardcoded in `Locations.Default` in `QDay.cs`. |
 | `recorded/` | Real Atlas results saved on 21 Oct 2026. Used when there is no key or Atlas is slow. |
 | `setup/` | How to set up a Windows PC: `WINDOWS_SETUP.md` (start here), plus the two install scripts. |
 | `log/` | Working notes from testing. `MORNING.md` is the running log of what broke and why. |
@@ -27,7 +26,7 @@ You need a Windows PC with GTA V Legacy. Follow `setup/WINDOWS_SETUP.md`. The tw
 To change the mission, edit `mod/QDay.cs`, rebuild (`dotnet build` in `mod/`), and copy `mod/bin/QDay.dll` into the game's `scripts` folder.
 
 ## Rules
-- Never put the Atlas key in a file. It lives in the `MOTH_API_TOKEN` environment variable.
+- The Atlas key goes only in the game's `scripts\QDay.ini` (`[Atlas] ApiKey`). Never commit it: the repo's `mod/QDay.ini` keeps it empty. Without a key the mission plays from saved real results.
 - Story mode only. Never open GTA Online with the mod installed.
 
 ## Status (3 Nov 2026)

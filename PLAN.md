@@ -113,7 +113,7 @@ Natives confirmed against alloc8or's native DB on 21 Oct:
 - Q-Day, money gone: `STAT_SET_INT("SP0_TOTAL_CASH" / SP1 / SP2, 0, true)` each tick and `DISPLAY_CASH(false)`. Also `HIDE_HUD_COMPONENT_THIS_FRAME(3)` for the cash component.
 - Q-Day, everyone mental: `SET_RIOT_MODE_ENABLED(true)` (a real leftover native) plus, for each nearby ped every few seconds, `GIVE_WEAPON_TO_PED`, `SET_PED_COMBAT_ATTRIBUTES(ped, 46, true)` (always fight), `SET_PED_FLEE_ATTRIBUTES(ped, 0, false)`, `SET_CAN_ATTACK_FRIENDLY`, and `SET_RELATIONSHIP_BETWEEN_GROUPS(5 /*hate*/, CIVMALE, CIVFEMALE / COP / PLAYER)`. The Atlas random bytes pick who gets what.
 - Leak ticker: scrolling `TextElement` fed from an array; order shuffled by the Atlas bytes.
-- Atlas bridge: the mod polls `bridge/result_*.json` with `File.ReadAllText` on a background `Thread`, never on the script tick. Sidecar runs beside the game.
+- Atlas: `Atlas.cs` calls api.mothquantum.com directly with HttpClient, one background `Thread` per job, never on the script tick; the tick drains finished results. Key from `[Atlas] ApiKey` in `scripts\QDay.ini`; without one it answers from the recorded results embedded in the DLL. (This replaced the original Python sidecar and file bridge.)
 
 Build and deploy: `dotnet build` on the Mac (net48 target, `ScriptHookVDotNet3` 3.6.0 and `LemonUI.SHVDN3` from NuGet), copy `QDay.dll` into `GTAV/scripts/`, press Insert in-game to reload SHVDN. Log at `GTAV/ScriptHookVDotNet.log` plus the mod's own `scripts/QDay.log`.
 

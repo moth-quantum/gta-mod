@@ -23,8 +23,6 @@ irm https://claude.ai/install.ps1 | iex
 # 4. The repo and the bridge folder.
 if (-not (Test-Path C:\gta-mod)) { git clone https://github.com/moth-quantum/gta-mod C:\gta-mod }  # or copy it over Parsec if private
 New-Item -ItemType Directory -Force C:\gta-mod\bridge | Out-Null
-[Environment]::SetEnvironmentVariable('QDAY_BRIDGE', 'C:\gta-mod\bridge', 'User')
 Write-Host ""
-Write-Host "Now set the Atlas key for your user (never in a file):"
-Write-Host "  [Environment]::SetEnvironmentVariable('MOTH_API_TOKEN', '<paste>', 'User')"
+Write-Host "For live Atlas, set [Atlas] ApiKey in the game's scripts\QDay.ini (never in the repo)."
 Write-Host "Then: install Parsec login, Steam login, buy/install GTA V Enhanced + Legacy. Reboot."
