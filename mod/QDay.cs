@@ -3,7 +3,7 @@
 // Every number on the HUD comes from Moth Atlas (see Atlas.cs).
 //
 // Build: dotnet build   ->   bin/QDay.dll   ->   GTAV/scripts/QDay.dll
-// In game: F9 starts the mission, Insert reloads SHVDN scripts.
+// In game: walk to the Q blip at Lester's and press E (INPUT_CONTEXT) to start, Insert reloads SHVDN scripts.
 // Log: GTAV/scripts/QDay.log (our own) and GTAV/ScriptHookVDotNet.log (SHVDN's).
 
 using System;
@@ -47,7 +47,8 @@ public class QDayScript : Script
     const double Threshold = 0.02;     // fez/marrakesh land at ~1.7%, brisbane at 8.5%
     Vehicle truck;
     float truckHealthAtPickup;
-    Blip blip;
+    Blip blip;                         // the current objective
+    Blip startBlip;                    // the mission start, shown while Idle
     AtlasResult atlasResult;           // the result that arrived this tick, or null
     AtlasResult lastResult;            // latest Atlas result, shown on the HUD and in the ending
     AtlasResult qdayResult;            // the Q-Day job result, set before GoTo(Phase.QDay)
@@ -55,7 +56,7 @@ public class QDayScript : Script
     readonly List<string> ticker = [];
     static readonly Locations loc = Locations.Default;
     readonly Atlas atlas;
-    readonly bool debug;               // [General] Debug in scripts\QDay.ini: enables the F5-F8 playtest keys
+    readonly bool debug;               // [General] Debug in scripts\QDay.ini: enables the F5-F9 playtest keys
 
     public QDayScript()
     {
@@ -65,7 +66,7 @@ public class QDayScript : Script
 
         phases = new()
         {
-            [Phase.Idle]        = new(begin: BeginIdle),
+            [Phase.Idle]        = new(begin: BeginIdle,        tick: TickIdle,        end: EndIdle),
             [Phase.Pitch]       = new(begin: BeginPitch,       tick: TickPitch),
             [Phase.Heist]       = new(begin: BeginHeist,       tick: TickHeist,       end: EndHeist),
             [Phase.Delivery]    = new(begin: BeginDelivery,    tick: TickDelivery,    end: EndDelivery),
@@ -82,10 +83,10 @@ public class QDayScript : Script
         debug = Settings.GetValue("General", "Debug", false);
         Log.Write($"Q-DAY loaded. debug={debug}");
 
-        string startupMsg = "~b~Q-DAY~s~ loaded.~n~  F9 start~n~  F10 abort";
+        string startupMsg = "~b~Q-DAY~s~ loaded.~n~  go to the ~y~Q~s~ blip to start~n~  F10 abort";
         if (debug)
         {
-          startupMsg += "~n~~y~DEBUG:~s~~n~  F5 teleport~n~  F6 skip wait~n~  F7 Q-Day now~n~  F8 Legion Square";
+          startupMsg += "~n~~y~DEBUG:~s~~n~  F5 teleport~n~  F6 skip wait~n~  F7 Q-Day now~n~  F8 Legion Square~n~  F9 start now";
         }
         Notification.Show(startupMsg);
     }
@@ -116,7 +117,13 @@ public class QDayScript : Script
     }
 
     // Script unloading (Insert/F11 reload, or the game closing): cancel any Atlas jobs still running.
-    void OnAborted(object sender, EventArgs e) => atlas.Dispose();
+    // Blips outlive the script, so remove ours or a reload leaves a duplicate on the map.
+    void OnAborted(object sender, EventArgs e)
+    {
+        atlas.Dispose();
+        startBlip?.Delete();
+        blip?.Delete();
+    }
 
     /// <summary>This tick's Atlas result if it is the named job and it succeeded, else null.</summary>
     AtlasResult Arrived(string name) => atlasResult is { Status: "done" } r && r.Name == name ? r : null;
@@ -126,13 +133,14 @@ public class QDayScript : Script
     // ---- input ---------------------------------------------------------------
     void OnKeyDown(object sender, KeyEventArgs e)
     {
-        if (e.KeyCode == Keys.F9 && phase == Phase.Idle) GoTo(Phase.Pitch);
         if (e.KeyCode == Keys.F10) { Log.Write("abort"); GoTo(Phase.Idle); }
         if (!debug) return;
         // Playtest shortcuts, only with Debug = true in QDay.ini. F5 teleports to the current
         // objective, F6 fakes the pending Atlas result from the recorded run, F7 jumps straight
-        // to Q-Day, F8 drops you in Legion Square. All logged so a recording that used them is obvious.
-        if (e.KeyCode == Keys.F5 && phase != Phase.Idle) DebugTeleport();
+        // to Q-Day, F8 drops you in Legion Square, F9 starts the mission from anywhere. All logged so a
+        // recording that used them is obvious.
+        if (e.KeyCode == Keys.F9 && phase == Phase.Idle) { Log.Write("DEBUG F9 start"); GoTo(Phase.Pitch); }
+        if (e.KeyCode == Keys.F5) DebugTeleport();
         if (e.KeyCode == Keys.F6 && phase == Phase.Calibrating) { Log.Write("DEBUG F6 recorded calibration"); FinishCalibration(chipIndex == loc.Chips.Count - 1 ? 0.0173 : 0.085); }
         if (e.KeyCode == Keys.F6 && phase == Phase.Threshold) { Log.Write("DEBUG F6 recorded qday"); StartQDay(AtlasResult.Recorded()); }
         if (e.KeyCode == Keys.F8) { Game.Player.Character.Position = new(195.0f, -933.0f, 30.7f); Log.Write("DEBUG F8 teleport to Legion Square"); }
@@ -147,7 +155,12 @@ public class QDayScript : Script
     void DebugTeleport()
     {
         var ped = Game.Player.Character;
-        var target = phase == Phase.Heist ? loc.Chips[chipIndex].Pos : loc.Lab.Pos;
+        var target = phase switch
+        {
+          Phase.Idle => loc.Start.Pos,
+          Phase.Heist => loc.Chips[chipIndex].Pos,
+          _ => loc.Lab.Pos,
+        };
         // In Delivery, first put the player back in the truck (story missions can yank them away), then bring the truck home.
         if (phase == Phase.Delivery && truck != null && truck.Exists() && !ped.IsInVehicle(truck))
         {
@@ -181,9 +194,36 @@ public class QDayScript : Script
         stormStarted = false; armedTotal = 0;
     }
 
+    const float StartRadius = 2.5f;
+
+    void TickIdle()
+    {
+        // Created here rather than in BeginIdle: the script loads straight into Idle without a
+        // Begin, and a blip can go missing (save loaded, another script clearing blips).
+        if (startBlip == null || !startBlip.Exists())
+        {
+            startBlip = World.CreateBlip(loc.Start.Pos);
+            startBlip.Sprite = (BlipSprite)940;
+            startBlip.Color = BlipColor.GolfPlayer2;
+            startBlip.Name = "Q-DAY";
+        }
+
+        var ped = Game.Player.Character;
+        var dist = ped.Position.DistanceTo(loc.Start.Pos);
+        if (dist > 50f) return;
+        World.DrawMarker(MarkerType.VerticalCylinder, loc.Start.Pos, Vector3.Zero, Vector3.Zero,
+                         new(StartRadius * 2, StartRadius * 2, 1f), Color.FromArgb(120, 240, 200, 80));
+        // On foot only: in a vehicle INPUT_CONTEXT is also the horn.
+        if (dist > StartRadius || ped.IsInVehicle() || ped.IsDead) return;
+        Screen.ShowHelpTextThisFrame("Press ~INPUT_CONTEXT~ to start ~y~Q-DAY~s~.");
+        if (Game.IsControlJustPressed(GTA.Control.Context)) GoTo(Phase.Pitch);
+    }
+
+    void EndIdle() { startBlip?.Delete(); startBlip = null; }
+
     /// <summary>
     /// End the run as a failure: say why, fade out, tear everything down and go back
-    /// to Idle so F9 starts again from the beginning. No checkpoint, no auto-restart.
+    /// to Idle, where the start blip starts it again from the beginning. No checkpoint, no auto-restart.
     /// </summary>
     void FailMission(string reason)
     {
@@ -196,7 +236,7 @@ public class QDayScript : Script
         Wait(1800);
         GoTo(Phase.Idle);                // blip, truck, weather, cash, control
         Screen.FadeIn(1500);
-        Screen.ShowSubtitle("~r~Mission failed.~s~ Press ~b~F9~s~ to start again.", 6000);
+        Screen.ShowSubtitle("~r~Mission failed.~s~ Go back to the ~y~Q~s~ blip to start again.", 6000);
     }
 
     // ---- Pitch: Lester explains the machine ------------------------------------------
@@ -626,23 +666,32 @@ public class Locations
 {
     public class Chip { public string Key, Label, Line; public Vector3 Pos; public int Wanted; }
     public class Site { public string Name; public Vector3 Pos; public Vector3 TruckSpawn; }
-    public Site Lab; public List<Chip> Chips; public Site Ending;
+    public Site Start, Lab; public List<Chip> Chips; public Site Ending;
 
     // Coordinates from community lists, verify each in-game. z is ground height at that x,y.
-    public static readonly Locations Default = new Locations
+    public static readonly Locations Default = new()
     {
-        Lab = new Site
+        // Where the player goes, on foot, to start the mission. Same spot as the lab for now.
+        Start = new()
+        {
+          Name = "Some payphone (mission start)",
+          Pos = new(395.24f, -798.65f, 28.78f)
+        },
+        Lab = new()
         {
             Name = "Lester's house (the machine is built here)",
-            Pos = new Vector3(1248.18f, -1728.10f, 56.0f),
-            TruckSpawn = new Vector3(1264.0f, -1730.0f, 55.5f),
+            Pos = new(1248.18f, -1728.10f, 56.0f),
+            TruckSpawn = new(1264.0f, -1730.0f, 55.5f),
         },
-        Chips = new List<Chip>
+        Chips = [
+            new() { Key = "brisbane", Label = "Humane Labs cryostat",       Pos = new(3617.23f, 3739.87f, 28.69f), Wanted = 3, Line = "Biotech cryostat. Noisy as hell, but it is cold." },
+            new() { Key = "torino",   Label = "FIB Building control plane", Pos = new(135.52f, -749.0f, 45.75f),   Wanted = 4, Line = "Government-grade control electronics. They will notice." },
+            new() { Key = "fez",      Label = "Fort Zancudo qubit array",   Pos = new(-2047.0f, 3132.0f, 32.8f),   Wanted = 5, Line = "The real thing. Military. Do not scratch it." },
+        ],
+        Ending = new()
         {
-            new Chip { Key = "brisbane", Label = "Humane Labs cryostat",       Pos = new Vector3(3617.23f, 3739.87f, 28.69f), Wanted = 3, Line = "Biotech cryostat. Noisy as hell, but it is cold." },
-            new Chip { Key = "torino",   Label = "FIB Building control plane", Pos = new Vector3(135.52f, -749.0f, 45.75f),   Wanted = 4, Line = "Government-grade control electronics. They will notice." },
-            new Chip { Key = "fez",      Label = "Fort Zancudo qubit array",   Pos = new Vector3(-2047.0f, 3132.0f, 32.8f),   Wanted = 5, Line = "The real thing. Military. Do not scratch it." },
+          Name = "Vinewood sign",
+          Pos = new(776.88f, 1175.61f, 345.96f)
         },
-        Ending = new Site { Name = "Vinewood sign", Pos = new Vector3(776.88f, 1175.61f, 345.96f) },
     };
 }

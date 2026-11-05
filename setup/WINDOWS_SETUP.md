@@ -32,16 +32,16 @@ Open `scripts\QDay.ini` in the game folder and set:
 Only edit the game's copy. Never put the key in the repo's `mod\QDay.ini`.
 
 ## 6. Play
-Press Play in Steam. In story mode, wait for "Q-DAY loaded", then press **F9**.
+Press Play in Steam. In story mode, wait for "Q-DAY loaded", then walk to the yellow **Q** blip at Lester's house and press **E** (the context button) when the prompt appears.
 
 | Key | Does |
 | --- | --- |
-| F9 | Start the mission |
 | F10 | Abort |
 | F5 | Teleport to the current objective (testing) |
 | F6 | Skip an Atlas wait using saved results (testing) |
 | F7 | Jump straight to Q-Day (testing) |
 | F8 | Teleport to Legion Square (testing) |
+| F9 | Start the mission from anywhere (testing) |
 
 The testing keys only work with `Debug = true` in `scripts\QDay.ini`.
 

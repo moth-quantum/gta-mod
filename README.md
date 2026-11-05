@@ -42,5 +42,5 @@ escape (roadblocks, briefcase, plane) is unbuilt; two cutscenes are outstanding.
 Open playtest items are tracked as GitHub issues. Deadline: 19 Nov 2026.
 
 Build on any machine with the .NET SDK — the Windows gaming PC is easiest:
-`dotnet build` in `mod/`, copy `bin/QDay.dll` and `QDay.ini` into `GTAV/scripts/` (set `Debug = true` there for the F5-F8 playtest keys), then press **F11** in game to reload
+`dotnet build` in `mod/`, copy `bin/QDay.dll` and `QDay.ini` into `GTAV/scripts/` (set `Debug = true` there for the F5-F9 playtest keys), then press **F11** in game to reload
 scripts (not Insert).
