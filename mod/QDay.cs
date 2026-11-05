@@ -23,10 +23,23 @@ namespace QDay;
 
 public enum Phase { Idle, Pitch, Heist, Delivery, Calibrating, Threshold, QDay, Ending }
 
+/// <summary>What a phase does on entry, every frame while active, and on exit. Missing callbacks do nothing.</summary>
+public sealed class PhaseCallbacks(Action begin = null, Action tick = null, Action end = null)
+{
+    public readonly Action Begin = begin ?? Nop, Tick = tick ?? Nop, End = end ?? Nop;
+    static void Nop() { }
+}
+
 public class QDayScript : Script
 {
     // ---- state ---------------------------------------------------------------
+    // The mission is a state machine over Phase. Every transition goes through GoTo(),
+    // which runs the old phase's End, then the new phase's Begin; OnTick runs the
+    // current phase's Tick. Data a phase needs on entry is set in a field before GoTo.
+    readonly Dictionary<Phase, PhaseCallbacks> phases;
     Phase phase = Phase.Idle;
+    DateTime phaseStarted = DateTime.UtcNow;
+
     int chipIndex = 0;                 // which of the three chips we are on
     int logicalQubits = 0;             // deliveries that came in under threshold
     double errorRate = double.NaN;     // live figure from Atlas, NaN = none yet
@@ -35,10 +48,11 @@ public class QDayScript : Script
     Vehicle truck;
     float truckHealthAtPickup;
     Blip blip;
-    DateTime phaseStarted = DateTime.UtcNow;
-    AtlasResult lastResult;            // latest Atlas result, taken on the script thread
-    Random rng = new Random();         // replaced by Atlas bytes on Q-Day
-    readonly List<string> ticker = new List<string>();
+    AtlasResult atlasResult;           // the result that arrived this tick, or null
+    AtlasResult lastResult;            // latest Atlas result, shown on the HUD and in the ending
+    AtlasResult qdayResult;            // the Q-Day job result, set before GoTo(Phase.QDay)
+    Random rng = new();                // replaced by Atlas bytes on Q-Day
+    readonly List<string> ticker = [];
     static readonly Locations loc = Locations.Default;
     readonly Atlas atlas;
     readonly bool debug;               // [General] Debug in scripts\QDay.ini: enables the F5-F8 playtest keys
@@ -47,10 +61,23 @@ public class QDayScript : Script
     {
         Log.Init(BaseDirectory);
         // [Atlas] ApiKey in QDay.ini; no key or Offline = true plays from the recorded results.
-        atlas = new Atlas(Settings.GetValue("Atlas", "ApiKey", ""), Settings.GetValue("Atlas", "Offline", false));
-        Aborted += (s, e) => atlas.Dispose();
+        atlas = new(Settings.GetValue("Atlas", "ApiKey", ""), Settings.GetValue("Atlas", "Offline", false));
+
+        phases = new()
+        {
+            [Phase.Idle]        = new(begin: BeginIdle),
+            [Phase.Pitch]       = new(begin: BeginPitch,       tick: TickPitch),
+            [Phase.Heist]       = new(begin: BeginHeist,       tick: TickHeist,       end: EndHeist),
+            [Phase.Delivery]    = new(begin: BeginDelivery,    tick: TickDelivery,    end: EndDelivery),
+            [Phase.Calibrating] = new(begin: BeginCalibrating, tick: TickCalibrating, end: EndCalibrating),
+            [Phase.Threshold]   = new(begin: BeginThreshold,   tick: TickThreshold,   end: EndThreshold),
+            [Phase.QDay]        = new(begin: BeginQDay,        tick: TickQDay,        end: EndQDay),
+            [Phase.Ending]      = new(begin: BeginEnding,      tick: TickEnding),
+        };
+
         Tick += OnTick;
         KeyDown += OnKeyDown;
+        Aborted += OnAborted;
         Interval = 0;
         debug = Settings.GetValue("General", "Debug", false);
         Log.Write($"Q-DAY loaded. debug={debug}");
@@ -63,29 +90,64 @@ public class QDayScript : Script
         Notification.Show(startupMsg);
     }
 
+    // ---- state machine -------------------------------------------------------
+    void GoTo(Phase next)
+    {
+        Log.Write($"phase {phase} -> {next}");
+        phases[phase].End();
+        phase = next;
+        phaseStarted = DateTime.UtcNow;
+        phases[next].Begin();
+    }
+
+    double Elapsed() => (DateTime.UtcNow - phaseStarted).TotalSeconds;
+
+    void OnTick(object sender, EventArgs e)
+    {
+        atlasResult = atlas.Take();
+        if (atlasResult != null)
+        {
+            lastResult = atlasResult;
+            Log.Write($"atlas result {atlasResult.Name}: {atlasResult}");
+        }
+
+        phases[phase].Tick();
+        if (phase != Phase.Idle) Hud.Draw(phase, chipIndex, logicalQubits, DisplayedError(), Threshold, lastResult);
+    }
+
+    // Script unloading (Insert/F11 reload, or the game closing): cancel any Atlas jobs still running.
+    void OnAborted(object sender, EventArgs e) => atlas.Dispose();
+
+    /// <summary>This tick's Atlas result if it is the named job and it succeeded, else null.</summary>
+    AtlasResult Arrived(string name) => atlasResult is { Status: "done" } r && r.Name == name ? r : null;
+
+    double DisplayedError() => double.IsNaN(errorRate) ? double.NaN : errorRate + damagePenalty;
+
     // ---- input ---------------------------------------------------------------
     void OnKeyDown(object sender, KeyEventArgs e)
     {
-        if (e.KeyCode == Keys.F9 && phase == Phase.Idle) StartMission();
-        if (e.KeyCode == Keys.F10) { Log.Write("abort"); Reset(); }
+        if (e.KeyCode == Keys.F9 && phase == Phase.Idle) GoTo(Phase.Pitch);
+        if (e.KeyCode == Keys.F10) { Log.Write("abort"); GoTo(Phase.Idle); }
         if (!debug) return;
         // Playtest shortcuts, only with Debug = true in QDay.ini. F5 teleports to the current
         // objective, F6 fakes the pending Atlas result from the recorded run, F7 jumps straight
         // to Q-Day, F8 drops you in Legion Square. All logged so a recording that used them is obvious.
         if (e.KeyCode == Keys.F5 && phase != Phase.Idle) DebugTeleport();
-        if (e.KeyCode == Keys.F6 && phase == Phase.Calibrating) { Log.Write("DEBUG F6 recorded calibration"); errorRate = chipIndex == loc.Chips.Count - 1 ? 0.0173 : 0.085; AfterCalibration(); }
-        if (e.KeyCode == Keys.F6 && phase == Phase.Threshold) { Log.Write("DEBUG F6 recorded qday"); BeginQDay(AtlasResult.Recorded()); }
-        if (e.KeyCode == Keys.F8) { var pl = Game.Player.Character; pl.Position = new Vector3(195.0f, -933.0f, 30.7f); Log.Write("DEBUG F8 teleport to Legion Square"); }
-        if (e.KeyCode == Keys.F7) { Log.Write("DEBUG F7 jump to Q-Day"); if (phase == Phase.Idle) StartMission(); lastResult = AtlasResult.Recorded(); BeginQDay(lastResult); }
+        if (e.KeyCode == Keys.F6 && phase == Phase.Calibrating) { Log.Write("DEBUG F6 recorded calibration"); FinishCalibration(chipIndex == loc.Chips.Count - 1 ? 0.0173 : 0.085); }
+        if (e.KeyCode == Keys.F6 && phase == Phase.Threshold) { Log.Write("DEBUG F6 recorded qday"); StartQDay(AtlasResult.Recorded()); }
+        if (e.KeyCode == Keys.F8) { Game.Player.Character.Position = new(195.0f, -933.0f, 30.7f); Log.Write("DEBUG F8 teleport to Legion Square"); }
+        if (e.KeyCode == Keys.F7)
+        {
+            Log.Write("DEBUG F7 jump to Q-Day");
+            if (phase == Phase.Idle) StopStoryMissions();
+            StartQDay(AtlasResult.Recorded());
+        }
     }
 
     void DebugTeleport()
     {
         var ped = Game.Player.Character;
-        Vector3 target;
-        if (phase == Phase.Heist) target = loc.Chips[chipIndex].Pos;
-        else if (phase == Phase.Delivery) target = loc.Lab.Pos;
-        else target = loc.Lab.Pos;
+        var target = phase == Phase.Heist ? loc.Chips[chipIndex].Pos : loc.Lab.Pos;
         // In Delivery, first put the player back in the truck (story missions can yank them away), then bring the truck home.
         if (phase == Phase.Delivery && truck != null && truck.Exists() && !ped.IsInVehicle(truck))
         {
@@ -100,28 +162,44 @@ public class QDayScript : Script
         Screen.ShowSubtitle("~y~debug teleport~s~", 1500);
     }
 
-    // ---- main loop -----------------------------------------------------------
-    void OnTick(object sender, EventArgs e)
+    // ---- Idle: no mission. Entering it tears everything down ---------------------
+    void BeginIdle()
     {
-        var r = atlas.Take();
-        if (r != null) { lastResult = r; OnAtlasResult(r); }
-
-        switch (phase)
-        {
-            case Phase.Pitch: TickPitch(); break;
-            case Phase.Heist: TickHeist(); break;
-            case Phase.Delivery: TickDelivery(); break;
-            case Phase.Calibrating: TickCalibrating(); break;
-            case Phase.Threshold: TickThreshold(); break;
-            case Phase.QDay: TickQDay(); break;
-            case Phase.Ending: TickEnding(); break;
-        }
-        if (phase != Phase.Idle) Hud.Draw(phase, chipIndex, logicalQubits, DisplayedError(), Threshold, lastResult);
+        Function.Call(Hash.SET_RIOT_MODE_ENABLED, false);
+        Function.Call(Hash.SET_CREATE_RANDOM_COPS, true);
+        Function.Call(Hash.DISPLAY_CASH, true);
+        Function.Call(Hash.SET_PLAYER_CONTROL, Game.Player, true, 0);
+        Function.Call(Hash.CLEAR_WEATHER_TYPE_PERSIST);
+        blip?.Delete(); blip = null;
+        truck?.MarkAsNoLongerNeeded(); truck = null;
+        ticker.Clear(); Hud.ResetTicker();
+        // Delivery runs at 3-5 stars. Without this, aborting with F10 mid-delivery
+        // ended the mission but left the player being hunted by the military.
+        Game.Player.WantedLevel = 0;
+        chipIndex = 0; logicalQubits = 0; errorRate = double.NaN; damagePenalty = 0;
+        lastResult = null; qdayResult = null;
+        stormStarted = false; armedTotal = 0;
     }
 
-    double DisplayedError() => double.IsNaN(errorRate) ? double.NaN : errorRate + damagePenalty;
+    /// <summary>
+    /// End the run as a failure: say why, fade out, tear everything down and go back
+    /// to Idle so F9 starts again from the beginning. No checkpoint, no auto-restart.
+    /// </summary>
+    void FailMission(string reason)
+    {
+        Log.Write("MISSION FAILED: " + reason);
+        // Clear the wanted level now: delivery runs at 3-5 stars and the fade below takes seconds.
+        Game.Player.WantedLevel = 0;
+        Hud.BigMessage("MISSION FAILED", reason);
+        Wait(2500);                      // let it be read before the screen goes
+        Screen.FadeOut(1500);
+        Wait(1800);
+        GoTo(Phase.Idle);                // blip, truck, weather, cash, control
+        Screen.FadeIn(1500);
+        Screen.ShowSubtitle("~r~Mission failed.~s~ Press ~b~F9~s~ to start again.", 6000);
+    }
 
-    // ---- phases --------------------------------------------------------------
+    // ---- Pitch: Lester explains the machine ------------------------------------------
     // Early story missions (Franklin and Lamar, Repossession, Chop) fail the moment the player leaves,
     // which snaps them back to a checkpoint. Q-DAY switches them off while it runs.
     // Controllers first, so nothing is left to notice the mission ending and show "Mission failed".
@@ -135,24 +213,23 @@ public class QDayScript : Script
         Log.Write("story missions stopped");
     }
 
-    void StartMission()
+    void BeginPitch()
     {
         StopStoryMissions();
         Log.Write("mission start");
-        SetPhase(Phase.Pitch);
         Screen.ShowSubtitle("~b~Lester:~s~ A machine that only factors numbers. That's all it does.", 6000);
         Hud.BigMessage("Q-DAY", "build a fault-tolerant quantum computer");
     }
 
     void TickPitch()
     {
-        if (Elapsed() > 7) BeginHeist();
+        if (Elapsed() > 7) GoTo(Phase.Heist);
     }
 
+    // ---- Heist: go to the current chip --------------------------------------------
     void BeginHeist()
     {
         var chip = loc.Chips[chipIndex];
-        SetPhase(Phase.Heist);
         blip = World.CreateBlip(chip.Pos);
         blip.Sprite = BlipSprite.Standard; blip.Color = BlipColor.Blue; blip.ShowRoute = true;
         Screen.ShowSubtitle($"~b~Lester:~s~ {chip.Line}", 6000);
@@ -161,34 +238,37 @@ public class QDayScript : Script
 
     void TickHeist()
     {
-        var chip = loc.Chips[chipIndex];
         var ped = Game.Player.Character;
-        if (ped.Position.DistanceTo(chip.Pos) < 6f)
-        {
-            // Pick up: the crate is the truck. Spawn it, make the player wanted, send them home.
-            truck = World.CreateVehicle(VehicleHash.Mule, ped.Position + ped.ForwardVector * 5f, ped.Heading);
-            if (truck == null) { Log.Write("truck spawn failed"); return; }
-            truck.PlaceOnGround();
-            // Keep the engine from streaming the truck out when the player gets far
-            // from it. Without this, "the truck no longer exists" below could mean
-            // "despawned" rather than "destroyed", and fail the mission unfairly.
-            truck.IsPersistent = true;
-            truckHealthAtPickup = truck.BodyHealth;
-            Function.Call(Hash.SET_PLAYER_WANTED_LEVEL, Game.Player, chip.Wanted, false);
-            Function.Call(Hash.SET_PLAYER_WANTED_LEVEL_NOW, Game.Player, false);
-            blip?.Delete();
-            blip = World.CreateBlip(loc.Lab.Pos); blip.Color = BlipColor.Green; blip.ShowRoute = true;
-            damagePenalty = 0;
-            SetPhase(Phase.Delivery);
-            Screen.ShowSubtitle($"~b~Lester:~s~ Got it. Bring it to me. ~r~Every bump is decoherence.~s~", 6000);
-            Log.Write($"pickup {chip.Key}, wanted {chip.Wanted}");
-        }
+        if (ped.Position.DistanceTo(loc.Chips[chipIndex].Pos) >= 6f) return;
+
+        // Pick up: the crate is the truck. If the spawn fails, stay here and try again next tick.
+        truck = World.CreateVehicle(VehicleHash.Mule, ped.Position + ped.ForwardVector * 5f, ped.Heading);
+        if (truck == null) { Log.Write("truck spawn failed"); return; }
+        truck.PlaceOnGround();
+        // Keep the engine from streaming the truck out when the player gets far
+        // from it. Without this, "the truck no longer exists" in Delivery could mean
+        // "despawned" rather than "destroyed", and fail the mission unfairly.
+        truck.IsPersistent = true;
+        GoTo(Phase.Delivery);
+    }
+
+    void EndHeist() { blip?.Delete(); blip = null; }
+
+    // ---- Delivery: drive the truck home without breaking it -------------------------
+    void BeginDelivery()
+    {
+        var chip = loc.Chips[chipIndex];
+        truckHealthAtPickup = truck.BodyHealth;
+        damagePenalty = 0;
+        Function.Call(Hash.SET_PLAYER_WANTED_LEVEL, Game.Player, chip.Wanted, false);
+        Function.Call(Hash.SET_PLAYER_WANTED_LEVEL_NOW, Game.Player, false);
+        blip = World.CreateBlip(loc.Lab.Pos); blip.Color = BlipColor.Green; blip.ShowRoute = true;
+        Screen.ShowSubtitle($"~b~Lester:~s~ Got it. Bring it to me. ~r~Every bump is decoherence.~s~", 6000);
+        Log.Write($"pickup {chip.Key}, wanted {chip.Wanted}");
     }
 
     void TickDelivery()
     {
-        var ped = Game.Player.Character;
-
         // The truck IS the chip. Delivery only completed while the player was sitting
         // in that exact truck, and nothing anywhere noticed if it stopped existing:
         // there is no timeout on this phase and nothing respawns it, so a truck
@@ -202,73 +282,67 @@ public class QDayScript : Script
         }
 
         // Body damage since pickup -> up to +5% on the error meter. Honest and visible.
-        // (The guard above has already established that the truck exists.)
         var lost = Math.Max(0, truckHealthAtPickup - truck.BodyHealth);
         damagePenalty = Math.Min(0.05, lost / 1000.0 * 0.05);
 
-        bool inTruck = ped.IsInVehicle(truck);
-        if (inTruck && ped.Position.DistanceTo(loc.Lab.Pos) < 12f)
-        {
-            var chip = loc.Chips[chipIndex];
-            Game.Player.WantedLevel = 0;
-            blip?.Delete();
-            SetPhase(Phase.Calibrating);
-            atlas.Calibrate("cal" + chipIndex, chip.Key);
-            Screen.ShowSubtitle("~b~Lester:~s~ Installing. Calibrating on the real noise model...", 5000);
-            Log.Write($"delivered {chip.Key}, penalty {damagePenalty:P2}, calibrating");
-        }
+        var ped = Game.Player.Character;
+        if (ped.IsInVehicle(truck) && ped.Position.DistanceTo(loc.Lab.Pos) < 12f) GoTo(Phase.Calibrating);
+    }
+
+    void EndDelivery()
+    {
+        Game.Player.WantedLevel = 0;
+        blip?.Delete(); blip = null;
+    }
+
+    // ---- Calibrating: Atlas measures the delivered chip -----------------------------
+    string CalibrationJob => "cal" + chipIndex;
+
+    void BeginCalibrating()
+    {
+        var chip = loc.Chips[chipIndex];
+        atlas.Calibrate(CalibrationJob, chip.Key);
+        Screen.ShowSubtitle("~b~Lester:~s~ Installing. Calibrating on the real noise model...", 5000);
+        Log.Write($"delivered {chip.Key}, penalty {damagePenalty:P2}, calibrating");
     }
 
     void TickCalibrating()
     {
-        // Waiting for Atlas. Result handled in OnAtlasResult. Timeout keeps the demo alive.
-        if (Elapsed() > 180) { Log.Write("calibration timeout"); errorRate = 0.1; AfterCalibration(); }
+        if (Arrived(CalibrationJob) is { } r) FinishCalibration(r.ErrorRate);
+        // Timeout keeps the demo alive.
+        else if (Elapsed() > 180) { Log.Write("calibration timeout"); FinishCalibration(0.1); }
     }
 
-    void OnAtlasResult(AtlasResult r)
+    void FinishCalibration(double measured)
     {
-        Log.Write($"atlas result {r.Name}: {r}");
-        if (r.Status != "done") { if (r.Status == "error") Log.Write("atlas error: " + r.Message); return; }
-        if (r.Kind == "calibrate" && phase == Phase.Calibrating)
-        {
-            errorRate = r.ErrorRate;
-            AfterCalibration();
-        }
-        else if (r.Kind == "qday" && phase == Phase.Threshold)
-        {
-            if (r.Ints != null && r.Ints.Count > 0) rng = new AtlasRandom(r.Ints);
-            BeginQDay(r);
-        }
-    }
-
-    void AfterCalibration()
-    {
+        errorRate = measured;
         var total = DisplayedError();
         bool clean = total <= Threshold;
         bool lastChip = chipIndex == loc.Chips.Count - 1;
         Log.Write($"calibrated chip {chipIndex}: live {errorRate:P2} + damage {damagePenalty:P2} = {total:P2} -> {(clean ? "LOGICAL QUBIT" : "too noisy")}");
         if (clean) { logicalQubits++; Hud.BigMessage("LOGICAL QUBIT", $"{logicalQubits} / 3  error {total:P1}"); }
         else Hud.BigMessage("TOO NOISY", $"error {total:P1} > threshold {Threshold:P0}. " + (lastChip ? "bring another one, carefully." : "upgrade the chip."));
-        truck?.MarkAsNoLongerNeeded(); truck = null;
+        Wait(4000);
 
         // Rule: the machine reaches threshold when the best chip is installed clean.
         // Brisbane and torino will never clear 2% (8.5% and 4.6% measured), they are the story of
         // getting there. Fez lands at 1.7%, so only truck damage can make it fail; then repeat fez.
-        if (lastChip && clean) { Wait(4000); BeginThreshold(); return; }
+        if (lastChip && clean) { GoTo(Phase.Threshold); return; }
         if (!lastChip) chipIndex++;
-        Wait(4000);
-        BeginHeist();
+        GoTo(Phase.Heist);
     }
 
+    void EndCalibrating() { truck?.MarkAsNoLongerNeeded(); truck = null; }
+
+    // ---- Threshold: the Q-Day job runs on IBM hardware, the player waits --------------
     void BeginThreshold()
     {
-        SetPhase(Phase.Threshold);
         Function.Call(Hash.SET_PLAYER_CONTROL, Game.Player, false, 0);
         Function.Call(Hash.SHAKE_GAMEPLAY_CAM, "SMALL_EXPLOSION_SHAKE", 0.3f);
         // The storm used to start HERE, then run for the whole IBM queue (up to 900s)
         // with the player frozen in place. A thunderstorm clears the streets, so by
         // the time the riot began there was nobody left to arm. It now starts in
-        // TickQDay, once peds have actually been armed. See StartStormWhenArmed.
+        // TickQDay, once peds have actually been armed.
         atlas.QDay("qday");
         Hud.BigMessage("THRESHOLD", "factoring RSA-2048 on IBM hardware...");
         Log.Write("threshold: qpu job requested");
@@ -277,13 +351,24 @@ public class QDayScript : Script
     void TickThreshold()
     {
         // The countdown is the real hardware queue. Nothing to fake here.
-        if (Elapsed() > 900) { Log.Write("qpu timeout, using recorded"); BeginQDay(AtlasResult.Recorded()); }
+        if (Arrived("qday") is { } r) StartQDay(r);
+        else if (Elapsed() > 900) { Log.Write("qpu timeout, using recorded"); StartQDay(AtlasResult.Recorded()); }
     }
 
-    void BeginQDay(AtlasResult r)
+    void EndThreshold() => Function.Call(Hash.SET_PLAYER_CONTROL, Game.Player, true, 0);
+
+    // ---- QDay: every key on earth is public, the city riots --------------------------
+    void StartQDay(AtlasResult r)
     {
-        SetPhase(Phase.QDay);
-        Function.Call(Hash.SET_PLAYER_CONTROL, Game.Player, true, 0);
+        qdayResult = r;
+        GoTo(Phase.QDay);
+    }
+
+    void BeginQDay()
+    {
+        var r = qdayResult;
+        lastResult = r;
+        if (r.Ints is { Count: > 0 }) rng = new AtlasRandom(r.Ints);
         Function.Call(Hash.ANIMPOSTFX_PLAY, "DeathFailMPIn", 1500, false);
         Function.Call(Hash.SET_RIOT_MODE_ENABLED, true);
         // Deliberately NOT starting the storm here either -- it waits until the first
@@ -354,16 +439,18 @@ public class QDayScript : Script
             }
         }
         Hud.Ticker(ticker);
-        if (Elapsed() > 300) BeginEnding();
+        if (Elapsed() > 300) GoTo(Phase.Ending);
     }
+
+    void EndQDay() => Function.Call(Hash.SET_RIOT_MODE_ENABLED, false);
 
     void BuildTicker(AtlasResult r)
     {
         ticker.Clear();
         Hud.ResetTicker();
-        var lines = new List<string>(Chaos.Leaks);
+        List<string> lines = [.. Chaos.Leaks];
         // shuffle with Atlas bytes
-        for (int i = lines.Count - 1; i > 0; i--) { int j = rng.Next(i + 1); var t = lines[i]; lines[i] = lines[j]; lines[j] = t; }
+        for (int i = lines.Count - 1; i > 0; i--) { int j = rng.Next(i + 1); (lines[i], lines[j]) = (lines[j], lines[i]); }
         // A live Atlas result can come back without a commit hash or backend (the
         // recorded fallback always has both). The null-conditionals used to collapse
         // to nothing, leaving the headline reading "KEY ... FACTORED ON " with gaps.
@@ -375,10 +462,9 @@ public class QDayScript : Script
         ticker.AddRange(lines);
     }
 
+    // ---- Ending: fade out, credit the hardware, back to Idle -------------------------
     void BeginEnding()
     {
-        SetPhase(Phase.Ending);
-        Function.Call(Hash.SET_RIOT_MODE_ENABLED, false);
         Screen.FadeOut(3000);
         Log.Write("ending");
     }
@@ -391,48 +477,7 @@ public class QDayScript : Script
             Hud.BigMessage("POST-QUANTUM CRYPTOGRAPHY", "was available the whole time");
             Notification.Show($"Randomness certified on {r?.Backend ?? "IBM hardware"} via Moth Atlas. Job {r?.JobId}.");
         }
-        if (Elapsed() > 12) { Screen.FadeIn(2000); Reset(); }
-    }
-
-    // ---- helpers -------------------------------------------------------------
-    void SetPhase(Phase p) { phase = p; phaseStarted = DateTime.UtcNow; Log.Write("phase -> " + p); }
-    double Elapsed() => (DateTime.UtcNow - phaseStarted).TotalSeconds;
-
-    /// <summary>
-    /// End the run as a failure: say why, fade out, tear everything down and go back
-    /// to Idle so F9 starts again from the beginning. No checkpoint, no auto-restart.
-    /// </summary>
-    void FailMission(string reason)
-    {
-        Log.Write("MISSION FAILED: " + reason);
-        // Reset() does NOT clear the wanted level, and delivery runs at 3-5 stars,
-        // so without this the player is left being hunted after the mission ends.
-        Game.Player.WantedLevel = 0;
-        Hud.BigMessage("MISSION FAILED", reason);
-        Wait(2500);                      // let it be read before the screen goes
-        Screen.FadeOut(1500);
-        Wait(1800);
-        Reset();                         // blip, truck, weather, cash, control -> Idle
-        Screen.FadeIn(1500);
-        Screen.ShowSubtitle("~r~Mission failed.~s~ Press ~b~F9~s~ to start again.", 6000);
-    }
-
-    void Reset()
-    {
-        Function.Call(Hash.SET_RIOT_MODE_ENABLED, false);
-        Function.Call(Hash.SET_CREATE_RANDOM_COPS, true);
-        Function.Call(Hash.DISPLAY_CASH, true);
-        Function.Call(Hash.SET_PLAYER_CONTROL, Game.Player, true, 0);
-        Function.Call(Hash.CLEAR_WEATHER_TYPE_PERSIST);
-        blip?.Delete(); blip = null;
-        truck?.MarkAsNoLongerNeeded(); truck = null;
-        ticker.Clear(); Hud.ResetTicker();
-        // Delivery runs at 3-5 stars. Without this, aborting with F10 mid-delivery
-        // ended the mission but left the player being hunted by the military.
-        Game.Player.WantedLevel = 0;
-        chipIndex = 0; logicalQubits = 0; errorRate = double.NaN; damagePenalty = 0; lastResult = null;
-        stormStarted = false; armedTotal = 0;
-        phase = Phase.Idle;
+        if (Elapsed() > 12) { Screen.FadeIn(2000); GoTo(Phase.Idle); }
     }
 }
 
