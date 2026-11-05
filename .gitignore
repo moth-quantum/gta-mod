@@ -4,5 +4,4 @@ __pycache__/
 .DS_Store
 mod/obj/
 mod/bin/*
-!mod/bin/QDay.dll
 .deploy/

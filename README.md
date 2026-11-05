@@ -10,7 +10,7 @@ The quantum computer is real: every error rate on screen comes from an Atlas job
 
 | Folder | What it is |
 | --- | --- |
-| `mod/` | The mission itself. `QDay.cs` is all the game code (C#, ScriptHookVDotNet 3). `bin/QDay.dll` is the built copy that goes in the game. `locations.json` holds the map positions. |
+| `mod/` | The mission itself. `QDay.cs` is the game code (C#, ScriptHookVDotNet 3), with the logger in `Log.cs`. `bin/QDay.dll` is the built copy that goes in the game. Map positions are hardcoded in `Locations.Default` in `QDay.cs`. |
 | `sidecar/` | The helper program that talks to Atlas. The game writes a request file, the helper runs the job and writes the result back. It holds the Atlas key so the game never does. |
 | `recorded/` | Real Atlas results saved on 21 Oct 2026. Used when there is no key or Atlas is slow. |
 | `setup/` | How to set up a Windows PC: `WINDOWS_SETUP.md` (start here), plus the two install scripts. |
@@ -34,16 +34,14 @@ To change the mission, edit `mod/QDay.cs`, rebuild (`dotnet build` in `mod/`), a
 The mission runs end to end in story mode. The leak ticker now scrolls at a
 constant speed independent of framerate, and the Q-Day riot has been seen for the
 first time: 64 pedestrians armed, where the previous attempt found one. The mod's
-own log finally lands in `scripts\QDay.log`, which also means `QDay.locations.json`
-is read at last — until now the mod silently ran on hardcoded defaults and every
-edit to that file was discarded, so the chip coordinates still need verifying
-in-game before they can be trusted.
+own log finally lands in `scripts\QDay.log`. Map positions are now hardcoded in
+`QDay.cs` (there is no locations file any more); the chip coordinates still need
+verifying in-game before they can be trusted.
 
 Still to do: the three heists need their own locations, guards and exits; the
 escape (roadblocks, briefcase, plane) is unbuilt; two cutscenes are outstanding.
 Open playtest items are tracked as GitHub issues. Deadline: 19 Nov 2026.
 
 Build on any machine with the .NET SDK — the Windows gaming PC is easiest:
-`dotnet build` in `mod/`, copy `bin/QDay.dll` and `locations.json` (as
-`QDay.locations.json`) into `GTAV/scripts/`, then press **F11** in game to reload
+`dotnet build` in `mod/`, copy `bin/QDay.dll` and `QDay.ini` into `GTAV/scripts/` (set `Debug = true` there for the F5-F8 playtest keys), then press **F11** in game to reload
 scripts (not Insert).
