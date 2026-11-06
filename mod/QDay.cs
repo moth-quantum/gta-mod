@@ -32,6 +32,7 @@ public sealed class PhaseCallbacks(Action begin = null, Action tick = null, Acti
 
 public class QDayScript : Script
 {
+    const int DefaultChipIndex = 0;
     // ---- state ---------------------------------------------------------------
     // The mission is a state machine over Phase. Every transition goes through GoTo(),
     // which runs the old phase's End, then the new phase's Begin; OnTick runs the
@@ -40,7 +41,7 @@ public class QDayScript : Script
     Phase phase = Phase.Idle;
     DateTime phaseStarted = DateTime.UtcNow;
 
-    int chipIndex = 0;                 // which of the three chips we are on
+    int chipIndex = DefaultChipIndex;  // which of the three chips we are on
     int logicalQubits = 0;             // deliveries that came in under threshold
     double errorRate = double.NaN;     // live figure from Atlas, NaN = none yet
     double damagePenalty = 0;          // truck damage since pickup, added to errorRate
@@ -52,10 +53,13 @@ public class QDayScript : Script
 
     // heist
     bool heistSceneSpawned;
+    bool heistCanReachTruck;
     Prop chipProp;
     Vehicle truck;
     float truckHealthAtPickup;
     Blip objectiveBlip;                // the current objective
+    Blip truckBlip;                // the current objective
+    Prop keypad;
 
 
     AtlasResult atlasResult;           // the result that arrived this tick, or null
@@ -122,7 +126,7 @@ public class QDayScript : Script
         }
 
         phases[phase].Tick();
-        if (phase != Phase.Idle) Hud.Draw(phase, chipIndex, logicalQubits, DisplayedError(), Threshold, lastResult);
+        if (phase != Phase.Idle) Hud.Draw(phase, chipIndex, logicalQubits, DisplayedError(), damagePenalty, Threshold, lastResult);
     }
 
     // Script unloading (Insert/F11 reload, or the game closing): cancel any Atlas jobs still running.
@@ -138,16 +142,19 @@ public class QDayScript : Script
         Log.Write($"cleaning up world");
         Function.Call(Hash.SET_CREATE_RANDOM_COPS, true);
         Function.Call(Hash.DISPLAY_CASH, true);
-        Function.Call(Hash.SET_PLAYER_CONTROL, Game.Player, true, 0);
         Function.Call(Hash.CLEAR_WEATHER_TYPE_PERSIST);
         startBlip?.Delete();
         objectiveBlip?.Delete();
+        truckBlip?.Delete();
         truck?.MarkAsNoLongerNeeded();
         chipProp?.MarkAsNoLongerNeeded();
+        keypad?.MarkAsNoLongerNeeded();
         startBlip = null;
         objectiveBlip = null;
+        truckBlip = null;
         truck = null;
         chipProp = null;
+        keypad = null;
     }
 
     /// <summary>This tick's Atlas result if it is the named job and it succeeded, else null.</summary>
@@ -200,6 +207,18 @@ public class QDayScript : Script
         Screen.ShowSubtitle("~y~debug teleport~s~", 1500);
     }
 
+    bool CheckForPlayerDeath()
+    {
+        var ped = Game.Player.Character;
+        if (ped.Exists() && ped.IsDead)
+        {
+            FailMission("you died");
+            return true;
+        }
+
+        return false;
+    }
+
     // ---- Idle: no mission. Entering it tears everything down ---------------------
     void BeginIdle()
     {
@@ -209,12 +228,10 @@ public class QDayScript : Script
         // Delivery runs at 3-5 stars. Without this, aborting with F10 mid-delivery
         // ended the mission but left the player being hunted by the military.
         Game.Player.WantedLevel = 0;
-        chipIndex = 0; logicalQubits = 0; errorRate = double.NaN; damagePenalty = 0;
+        chipIndex = DefaultChipIndex; logicalQubits = 0; errorRate = double.NaN; damagePenalty = 0;
         lastResult = null; qdayResult = null;
         stormStarted = false; armedTotal = 0;
     }
-
-    const float StartRadius = 2.5f;
 
     void TickIdle()
     {
@@ -255,14 +272,13 @@ public class QDayScript : Script
               startRingSoundId = GTA.Audio.PlaySoundAt(loc.Start.Pos, "ASS_PAYPHONE_RING_master");
           }
 
-          World.DrawMarker(MarkerType.VerticalCylinder, loc.Start.Pos, Vector3.Zero, Vector3.Zero,
-                           new(StartRadius * 2, StartRadius * 2, 1f), Color.FromArgb(120, 240, 200, 80));
           // On foot only: in a vehicle INPUT_CONTEXT is also the horn.
-          if (dist > StartRadius || ped.IsInVehicle() || ped.IsDead) return;
-
-          Screen.ShowHelpTextThisFrame("Press ~INPUT_CONTEXT~ to start ~y~Q-DAY~s~.");
-          if (Game.IsControlJustPressed(GTA.Control.Context))
-            GoTo(Phase.Pitch);
+          if (dist <= 2.5f && !ped.IsInVehicle() && !ped.IsDead)
+          {
+            Screen.ShowHelpTextThisFrame("Press ~INPUT_CONTEXT~ to start ~y~Q-DAY~s~.");
+            if (Game.IsControlJustPressed(GTA.Control.Context))
+              GoTo(Phase.Pitch);
+          }
         }
     }
 
@@ -306,7 +322,6 @@ public class QDayScript : Script
     {
         foreach (var name in StoryScripts) Function.Call(Hash.TERMINATE_ALL_SCRIPTS_WITH_THIS_NAME, name);
         Function.Call(Hash.DO_SCREEN_FADE_IN, 500);
-        Function.Call(Hash.SET_PLAYER_CONTROL, Game.Player, true, 0);
         Log.Write("story missions stopped");
     }
 
@@ -320,6 +335,8 @@ public class QDayScript : Script
 
     void TickPitch()
     {
+        if (CheckForPlayerDeath()) return;
+
         if (Elapsed() > 7) GoTo(Phase.Heist);
     }
 
@@ -338,6 +355,8 @@ public class QDayScript : Script
 
     void TickHeist()
     {
+        if (CheckForPlayerDeath()) return;
+
         var ped = Game.Player.Character;
         if (!ped.Exists()) return;
 
@@ -347,32 +366,49 @@ public class QDayScript : Script
         {
           switch (chipIndex)
           {
-            case 0: // Humane Lab
-              truck = World.CreateVehicle(VehicleHash.Mule3, new Vector3(3611.74f, 3737.08f, 28.92f), 325.04f);
+            case 0: // Humane Labs
+              truck = World.CreateVehicle(VehicleHash.Mule3, new(3611.74f, 3737.08f, 28.92f), 325.04f);
               if (truck == null) { Log.Write("truck spawn failed"); return; }
               truck.PlaceOnGround();
               truck.IsPersistent = true;
-              truck.Mods.InstallModKit();
               truck.Mods.PrimaryColor = VehicleColor.MatteWhite;
-              truck.Mods[VehicleModType.Engine].Index = truck.Mods[VehicleModType.Engine].Count - 1;
-              truck.Mods[VehicleModType.Brakes].Index = truck.Mods[VehicleModType.Brakes].Count - 1;
-              truck.Mods[VehicleModType.Transmission].Index = truck.Mods[VehicleModType.Transmission].Count - 1;
+              TuneTruck();
               truck.Doors[VehicleDoorIndex.BackLeftDoor].Open(loose: false, instantly: true);
               truck.Doors[VehicleDoorIndex.BackRightDoor].Open(loose: false, instantly: true);
 
-              chipProp = World.CreateProp(new Model("prop_military_pickup_01"), Vector3.Zero, false, false);
-              chipProp.AttachTo(truck, new Vector3(0f, -1f, 0.9f), new Vector3(0f, 0f, 90f));
+              chipProp = World.CreateProp(new("prop_military_pickup_01"), Vector3.Zero, false, false);
+              chipProp.AttachTo(truck, new(0f, -1f, 0.9f), new(0f, 0f, 90f));
+
+              keypad = World.CreateProp(new("prop_ld_keypad_01"), new(3624.6f, 3749.3f, 28.95f), new(0f, 0f, 145.5f), false, false);
+              // TODO: spawn guard inside Humane Labs garage
               break;
             case 1: // FIB
+              truck = World.CreateVehicle(VehicleHash.Boxville2, new(178.55f, -698.54f, 32.94f), 68.86f);
+              if (truck == null) { Log.Write("truck spawn failed"); return; }
+              truck.PlaceOnGround();
+              truck.IsPersistent = true;
+              truck.Mods.PrimaryColor = VehicleColor.MetallicBlack;
+              TuneTruck();
+
+              chipProp = World.CreateProp(new("prop_military_pickup_01"), Vector3.Zero, false, false);
+              chipProp.AttachTo(truck, new(0f, -1.6f, 0.9f), new(0f, 0f, 90f));
+              // TODO: spawn FIB guards around the van
+              break;
             case 2: // Military
               truck = World.CreateVehicle(VehicleHash.Mule3, loc.Chips[chipIndex].Pos, 0.0f);
               if (truck == null) { Log.Write("truck spawn failed"); return; }
               truck.PlaceOnGround();
               truck.IsPersistent = true;
+              truck.Mods.PrimaryColor = VehicleColor.WornOliveArmyGreen;
+              TuneTruck();
+
+              chipProp = World.CreateProp(new("prop_military_pickup_01"), Vector3.Zero, false, false);
+              chipProp.AttachTo(truck, new(0f, -1f, 0.9f), new(0f, 0f, 90f));
               break;
           }
 
           heistSceneSpawned = true;
+          heistCanReachTruck = false;
         }
 
         if (heistSceneSpawned)
@@ -386,20 +422,41 @@ public class QDayScript : Script
             switch (chipIndex)
             {
               case 0: // Humane Lab
-                // Unlock garage doors
-                Function.Call(Hash.SET_STATE_OF_CLOSEST_DOOR_OF_TYPE, Game.GenerateHash("v_ilev_bl_shutter2"), 3627.71f, 3746.72f, 27.7f, /* locked */ false, 1.0, false);
-                Function.Call(Hash.SET_STATE_OF_CLOSEST_DOOR_OF_TYPE, Game.GenerateHash("v_ilev_bl_shutter2"), 3620.84f, 3751.53f, 27.7f, /* locked */ false, 1.0, false);
+                bool unlocked = !keypad.Exists() || keypad.Health < 1000;
+                if (unlocked && !heistCanReachTruck)
+                {
+                  heistCanReachTruck = true;
+                  World.CreateParticleEffectNonLooped(new("core"), "ent_sht_electrical_box", keypad);
+                }
+
+                // Unlock garage doors if keypad is shot
+                Function.Call(Hash.SET_STATE_OF_CLOSEST_DOOR_OF_TYPE, Game.GenerateHash("v_ilev_bl_shutter2"), 3627.71f, 3746.72f, 27.7f, /* locked */ !unlocked, /* open ratio */ unlocked ? 1.0 : 0.0, false);
+                Function.Call(Hash.SET_STATE_OF_CLOSEST_DOOR_OF_TYPE, Game.GenerateHash("v_ilev_bl_shutter2"), 3620.84f, 3751.53f, 27.7f, /* locked */ !unlocked, /* open ratio */ unlocked ? 1.0 : 0.0, false);
                 break;
               case 1: // FIB
               case 2: // Military
+                heistCanReachTruck = true;
                 break;
             }
 
-            if (distToChip < 6f && Function.Call<bool>(Hash.IS_ENTITY_ON_SCREEN, truck))
+            if (heistCanReachTruck)
             {
-                GoTo(Phase.Delivery);
+              var distToTruck = ped.Position.DistanceTo(truck.Position);
+              if (distToTruck < 6f && Function.Call<bool>(Hash.IS_ENTITY_ON_SCREEN, truck))
+              {
+                  GoTo(Phase.Delivery);
+              }
             }
         }
+    }
+
+    void TuneTruck()
+    {
+        truck.Mods.InstallModKit();
+        truck.Mods[VehicleModType.Engine].Index = truck.Mods[VehicleModType.Engine].Count - 1;
+        truck.Mods[VehicleModType.Brakes].Index = truck.Mods[VehicleModType.Brakes].Count - 1;
+        truck.Mods[VehicleModType.Transmission].Index = truck.Mods[VehicleModType.Transmission].Count - 1;
+        truck.Mods[VehicleModType.Armor].Index = truck.Mods[VehicleModType.Armor].Count - 1;
     }
 
     void EndHeist()
@@ -419,12 +476,21 @@ public class QDayScript : Script
         objectiveBlip = World.CreateBlip(loc.Lab.Pos);
         objectiveBlip.Color = BlipColor.Yellow;
         objectiveBlip.ShowRoute = true;
+        truckBlip = truck.AddBlip();
+        truckBlip.Sprite = BlipSprite.Truck;
+        truckBlip.Color = BlipColor.Blue;
+        truckBlip.Scale = 0.8f;
+        truckBlip.IsFlashing = true;
+        truckBlip.FlashInterval = 250;
+        truckBlip.FlashTimeLeft = 2000;
         Screen.ShowSubtitle($"~b~Lester:~s~ Got it. Bring it to me. ~r~Every bump is decoherence.~s~", 6000);
         Log.Write($"pickup {chip.Key}, wanted {chip.Wanted}");
     }
 
     void TickDelivery()
     {
+        if (CheckForPlayerDeath()) return;
+
         // The truck IS the chip. Delivery only completed while the player was sitting
         // in that exact truck, and nothing anywhere noticed if it stopped existing:
         // there is no timeout on this phase and nothing respawns it, so a truck
@@ -454,14 +520,24 @@ public class QDayScript : Script
         damagePenalty = Math.Min(0.05, lost / 1000.0 * 0.05);
 
         var ped = Game.Player.Character;
-        if (ped.IsInVehicle(truck) && ped.Position.DistanceTo(loc.Lab.Pos) < 12f) GoTo(Phase.Calibrating);
+        var inTruck = ped.IsInVehicle(truck);
+        truckBlip.DisplayType = inTruck ? BlipDisplayType.NoDisplay : BlipDisplayType.Default;
+
+        if (Elapsed() > 10 && !inTruck)
+        {
+            Screen.ShowSubtitle($"Get in the ~b~truck~s~.", 100);
+        }
+
+        if (inTruck && ped.Position.DistanceTo(loc.Lab.Pos) < 12f) GoTo(Phase.Calibrating);
     }
 
     void EndDelivery()
     {
         Game.Player.WantedLevel = 0;
         objectiveBlip?.Delete();
+        truckBlip?.Delete();
         objectiveBlip = null;
+        truckBlip = null;
     }
 
     // ---- Calibrating: Atlas measures the delivered chip -----------------------------
@@ -477,6 +553,8 @@ public class QDayScript : Script
 
     void TickCalibrating()
     {
+        if (CheckForPlayerDeath()) return;
+
         if (Arrived(CalibrationJob) is { } r) FinishCalibration(r.ErrorRate);
         // Timeout keeps the demo alive.
         else if (Elapsed() > 180) { Log.Write("calibration timeout"); FinishCalibration(0.1); }
@@ -501,12 +579,17 @@ public class QDayScript : Script
         GoTo(Phase.Heist);
     }
 
-    void EndCalibrating() { truck?.MarkAsNoLongerNeeded(); truck = null; }
+    void EndCalibrating()
+    {
+      truck?.MarkAsNoLongerNeeded();
+      truck = null;
+      chipProp?.MarkAsNoLongerNeeded();
+      chipProp = null;
+    }
 
     // ---- Threshold: the Q-Day job runs on IBM hardware, the player waits --------------
     void BeginThreshold()
     {
-        Function.Call(Hash.SET_PLAYER_CONTROL, Game.Player, false, 0);
         Function.Call(Hash.SHAKE_GAMEPLAY_CAM, "SMALL_EXPLOSION_SHAKE", 0.3f);
         // The storm used to start HERE, then run for the whole IBM queue (up to 900s)
         // with the player frozen in place. A thunderstorm clears the streets, so by
@@ -519,12 +602,16 @@ public class QDayScript : Script
 
     void TickThreshold()
     {
+        if (CheckForPlayerDeath()) return;
+
         // The countdown is the real hardware queue. Nothing to fake here.
         if (Arrived("qday") is { } r) StartQDay(r);
-        else if (Elapsed() > 900) { Log.Write("qpu timeout, using recorded"); StartQDay(AtlasResult.Recorded()); }
+        else if (Elapsed() > 180) { Log.Write("qpu timeout, using recorded"); StartQDay(AtlasResult.Recorded()); }
     }
 
-    void EndThreshold() => Function.Call(Hash.SET_PLAYER_CONTROL, Game.Player, true, 0);
+    void EndThreshold()
+    {
+    }
 
     // ---- QDay: every key on earth is public, the city riots --------------------------
     void StartQDay(AtlasResult r)
@@ -556,6 +643,8 @@ public class QDayScript : Script
 
     void TickQDay()
     {
+        if (CheckForPlayerDeath()) return;
+
         // Money does not exist any more.
         Game.Player.Money = 0;
         Function.Call(Hash.DISPLAY_CASH, false);
@@ -688,14 +777,14 @@ public static class Chaos
 
 public static class Hud
 {
-    public static void Draw(Phase phase, int chip, int logical, double err, double threshold, AtlasResult last)
+    public static void Draw(Phase phase, int chip, int logical, double err, double penalty, double threshold, AtlasResult last)
     {
         var errText = double.IsNaN(err) ? "--" : (err * 100).ToString("0.00") + "%";
         var color = double.IsNaN(err) ? Color.White : (err <= threshold ? Color.LimeGreen : Color.OrangeRed);
         new ContainerElement(new PointF(940, 140), new SizeF(320, 92), Color.FromArgb(160, 0, 0, 0)).Draw();
         new TextElement("Q-DAY  " + phase.ToString().ToUpper(), new PointF(950, 144), 0.42f, Color.White, Font.ChaletLondon, Alignment.Left).Draw();
         new TextElement($"logical qubits  {logical} / 3", new PointF(950, 168), 0.38f, Color.White, Font.ChaletLondon, Alignment.Left).Draw();
-        new TextElement($"error rate  {errText}   threshold {threshold * 100:0}%", new PointF(950, 190), 0.38f, color, Font.ChaletLondon, Alignment.Left).Draw();
+        new TextElement($"error rate  {errText}  penalty {penalty:P2}  threshold {threshold * 100:0}%", new PointF(950, 190), 0.38f, color, Font.ChaletLondon, Alignment.Left).Draw();
         if (phase == Phase.Calibrating || phase == Phase.Threshold)
             new TextElement(phase == Phase.Threshold ? "IBM hardware queue..." : "calibrating on Atlas...", new PointF(950, 212), 0.34f, Color.LightBlue, Font.ChaletLondon, Alignment.Left).Draw();
     }
@@ -792,13 +881,11 @@ public static class Hud
 public class Locations
 {
     public class Chip { public string Key, Label, Line; public Vector3 Pos; public int Wanted; }
-    public class Site { public string Name; public Vector3 Pos; public Vector3 TruckSpawn; }
+    public class Site { public string Name; public Vector3 Pos; }
     public Site Start, Lab; public List<Chip> Chips; public Site Ending;
 
-    // Coordinates from community lists, verify each in-game. z is ground height at that x,y.
     public static readonly Locations Default = new()
     {
-        // Where the player goes, on foot, to start the mission. Same spot as the lab for now.
         Start = new()
         {
           Name = "Some payphone (mission start)",
@@ -807,12 +894,11 @@ public class Locations
         Lab = new()
         {
             Name = "Lester's house (the machine is built here)",
-            Pos = new(1248.18f, -1728.10f, 56.0f),
-            TruckSpawn = new(1264.0f, -1730.0f, 55.5f),
+            Pos = new(1279.96f, -1733.71f, 53.55f),
         },
         Chips = [
-            new() { Key = "brisbane", Label = "Humane Labs cryostat",       Pos = new(3617.23f, 3739.87f, 28.69f), Wanted = 3, Line = "Biotech cryostat. Noisy as hell, but it is cold." },
-            new() { Key = "torino",   Label = "FIB Building control plane", Pos = new(135.52f, -749.0f, 45.75f),   Wanted = 4, Line = "Government-grade control electronics. They will notice." },
+            new() { Key = "brisbane", Label = "Humane Labs cryostat",       Pos = new(3627.89f, 3754.49f, 28.52f), Wanted = 3, Line = "Biotech cryostat. Noisy as hell, but it is cold." },
+            new() { Key = "torino",   Label = "FIB Building control plane", Pos = new(156.67f, -713.8f, 33.0f),    Wanted = 4, Line = "Government-grade control electronics. They will notice." },
             new() { Key = "fez",      Label = "Fort Zancudo qubit array",   Pos = new(-2047.0f, 3132.0f, 32.8f),   Wanted = 5, Line = "The real thing. Military. Do not scratch it." },
         ],
         Ending = new()
