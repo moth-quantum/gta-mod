@@ -39,4 +39,14 @@
     <EmbeddedResource Include="..\recorded\graph_fake_*.json;..\recorded\qrng_qpu_64q_marrakesh.json" LogicalName="recorded.%(Filename)%(Extension)" />
   </ItemGroup>
 
+  <!-- Copy the merged DLL into the game after every build when GameDir is set, usually in the
+       gitignored QDay.csproj.user (MSBuild imports it automatically):
+         <Project><PropertyGroup><GameDir>C:\path\to\Grand Theft Auto V</GameDir></PropertyGroup></Project>
+       SHVDN loads a shadow copy, so this works with the game running; press Insert to reload. -->
+  <Target Name="DeployToGame" AfterTargets="ILRepackDependencies" Condition="'$(GameDir)' != ''">
+    <Copy SourceFiles="$(OutputPath)$(TargetName).dll;$(OutputPath)$(TargetName).pdb"
+          DestinationFolder="$(GameDir)\scripts" SkipUnchangedFiles="true" />
+    <Message Importance="high" Text="Deployed $(TargetName).dll to $(GameDir)\scripts" />
+  </Target>
+
 </Project>

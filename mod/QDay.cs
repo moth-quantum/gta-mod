@@ -45,10 +45,19 @@ public class QDayScript : Script
     double errorRate = double.NaN;     // live figure from Atlas, NaN = none yet
     double damagePenalty = 0;          // truck damage since pickup, added to errorRate
     const double Threshold = 0.02;     // fez/marrakesh land at ~1.7%, brisbane at 8.5%
+
+    // idle
+    Blip startBlip;                    // the mission start, shown while Idle
+    int? startRingSoundId;
+
+    // heist
+    bool heistSceneSpawned;
+    Prop chipProp;
     Vehicle truck;
     float truckHealthAtPickup;
-    Blip blip;                         // the current objective
-    Blip startBlip;                    // the mission start, shown while Idle
+    Blip objectiveBlip;                // the current objective
+
+
     AtlasResult atlasResult;           // the result that arrived this tick, or null
     AtlasResult lastResult;            // latest Atlas result, shown on the HUD and in the ending
     AtlasResult qdayResult;            // the Q-Day job result, set before GoTo(Phase.QDay)
@@ -121,8 +130,24 @@ public class QDayScript : Script
     void OnAborted(object sender, EventArgs e)
     {
         atlas.Dispose();
+        CleanUpWorld();
+    }
+
+    void CleanUpWorld()
+    {
+        Log.Write($"cleaning up world");
+        Function.Call(Hash.SET_CREATE_RANDOM_COPS, true);
+        Function.Call(Hash.DISPLAY_CASH, true);
+        Function.Call(Hash.SET_PLAYER_CONTROL, Game.Player, true, 0);
+        Function.Call(Hash.CLEAR_WEATHER_TYPE_PERSIST);
         startBlip?.Delete();
-        blip?.Delete();
+        objectiveBlip?.Delete();
+        truck?.MarkAsNoLongerNeeded();
+        chipProp?.MarkAsNoLongerNeeded();
+        startBlip = null;
+        objectiveBlip = null;
+        truck = null;
+        chipProp = null;
     }
 
     /// <summary>This tick's Atlas result if it is the named job and it succeeded, else null.</summary>
@@ -178,14 +203,9 @@ public class QDayScript : Script
     // ---- Idle: no mission. Entering it tears everything down ---------------------
     void BeginIdle()
     {
-        Function.Call(Hash.SET_RIOT_MODE_ENABLED, false);
-        Function.Call(Hash.SET_CREATE_RANDOM_COPS, true);
-        Function.Call(Hash.DISPLAY_CASH, true);
-        Function.Call(Hash.SET_PLAYER_CONTROL, Game.Player, true, 0);
-        Function.Call(Hash.CLEAR_WEATHER_TYPE_PERSIST);
-        blip?.Delete(); blip = null;
-        truck?.MarkAsNoLongerNeeded(); truck = null;
-        ticker.Clear(); Hud.ResetTicker();
+        CleanUpWorld();
+        ticker.Clear();
+        Hud.ResetTicker();
         // Delivery runs at 3-5 stars. Without this, aborting with F10 mid-delivery
         // ended the mission but left the player being hunted by the military.
         Game.Player.WantedLevel = 0;
@@ -198,6 +218,14 @@ public class QDayScript : Script
 
     void TickIdle()
     {
+        var inMission = Function.Call<bool>(Hash.GET_MISSION_FLAG);
+        if (inMission)
+        {
+          startBlip?.Delete();
+          startBlip = null;
+          return;
+        }
+
         // Created here rather than in BeginIdle: the script loads straight into Idle without a
         // Begin, and a blip can go missing (save loaded, another script clearing blips).
         if (startBlip == null || !startBlip.Exists())
@@ -210,16 +238,45 @@ public class QDayScript : Script
 
         var ped = Game.Player.Character;
         var dist = ped.Position.DistanceTo(loc.Start.Pos);
-        if (dist > 50f) return;
-        World.DrawMarker(MarkerType.VerticalCylinder, loc.Start.Pos, Vector3.Zero, Vector3.Zero,
-                         new(StartRadius * 2, StartRadius * 2, 1f), Color.FromArgb(120, 240, 200, 80));
-        // On foot only: in a vehicle INPUT_CONTEXT is also the horn.
-        if (dist > StartRadius || ped.IsInVehicle() || ped.IsDead) return;
-        Screen.ShowHelpTextThisFrame("Press ~INPUT_CONTEXT~ to start ~y~Q-DAY~s~.");
-        if (Game.IsControlJustPressed(GTA.Control.Context)) GoTo(Phase.Pitch);
+        if (dist > 50f)
+        {
+          if (startRingSoundId.HasValue)
+          {
+            Audio.StopSound(startRingSoundId.Value);
+            Function.Call(Hash.RELEASE_NAMED_SCRIPT_AUDIO_BANK, "SCRIPT\\ASSASSINATION_MULTI");
+            startRingSoundId = null;
+          }
+        }
+        else
+        {
+          if (!startRingSoundId.HasValue)
+          {
+            if (Function.Call<bool>(Hash.REQUEST_SCRIPT_AUDIO_BANK, "SCRIPT\\ASSASSINATION_MULTI", false, -1))
+              startRingSoundId = GTA.Audio.PlaySoundAt(loc.Start.Pos, "ASS_PAYPHONE_RING_master");
+          }
+
+          World.DrawMarker(MarkerType.VerticalCylinder, loc.Start.Pos, Vector3.Zero, Vector3.Zero,
+                           new(StartRadius * 2, StartRadius * 2, 1f), Color.FromArgb(120, 240, 200, 80));
+          // On foot only: in a vehicle INPUT_CONTEXT is also the horn.
+          if (dist > StartRadius || ped.IsInVehicle() || ped.IsDead) return;
+
+          Screen.ShowHelpTextThisFrame("Press ~INPUT_CONTEXT~ to start ~y~Q-DAY~s~.");
+          if (Game.IsControlJustPressed(GTA.Control.Context))
+            GoTo(Phase.Pitch);
+        }
     }
 
-    void EndIdle() { startBlip?.Delete(); startBlip = null; }
+    void EndIdle()
+    {
+      startBlip?.Delete();
+      startBlip = null;
+      if (startRingSoundId.HasValue)
+      {
+        Audio.StopSound(startRingSoundId.Value);
+        Function.Call(Hash.RELEASE_NAMED_SCRIPT_AUDIO_BANK, "SCRIPT\\ASSASSINATION_MULTI");
+        startRingSoundId = null;
+      }
+    }
 
     /// <summary>
     /// End the run as a failure: say why, fade out, tear everything down and go back
@@ -270,8 +327,11 @@ public class QDayScript : Script
     void BeginHeist()
     {
         var chip = loc.Chips[chipIndex];
-        blip = World.CreateBlip(chip.Pos);
-        blip.Sprite = BlipSprite.Standard; blip.Color = BlipColor.Blue; blip.ShowRoute = true;
+        objectiveBlip = World.CreateBlip(chip.Pos);
+        objectiveBlip.Sprite = BlipSprite.Standard;
+        objectiveBlip.Color = BlipColor.Yellow;
+        objectiveBlip.ShowRoute = true;
+        heistSceneSpawned = false;
         Screen.ShowSubtitle($"~b~Lester:~s~ {chip.Line}", 6000);
         Log.Write($"heist {chipIndex} -> {chip.Label} at {chip.Pos}");
     }
@@ -279,20 +339,74 @@ public class QDayScript : Script
     void TickHeist()
     {
         var ped = Game.Player.Character;
-        if (ped.Position.DistanceTo(loc.Chips[chipIndex].Pos) >= 6f) return;
+        if (!ped.Exists()) return;
 
-        // Pick up: the crate is the truck. If the spawn fails, stay here and try again next tick.
-        truck = World.CreateVehicle(VehicleHash.Mule, ped.Position + ped.ForwardVector * 5f, ped.Heading);
-        if (truck == null) { Log.Write("truck spawn failed"); return; }
-        truck.PlaceOnGround();
-        // Keep the engine from streaming the truck out when the player gets far
-        // from it. Without this, "the truck no longer exists" in Delivery could mean
-        // "despawned" rather than "destroyed", and fail the mission unfairly.
-        truck.IsPersistent = true;
-        GoTo(Phase.Delivery);
+        var distToChip = ped.Position.DistanceTo(loc.Chips[chipIndex].Pos);
+
+        if (!heistSceneSpawned && distToChip < 100.0f)
+        {
+          switch (chipIndex)
+          {
+            case 0: // Humane Lab
+              truck = World.CreateVehicle(VehicleHash.Mule3, new Vector3(3611.74f, 3737.08f, 28.92f), 325.04f);
+              if (truck == null) { Log.Write("truck spawn failed"); return; }
+              truck.PlaceOnGround();
+              truck.IsPersistent = true;
+              truck.Mods.InstallModKit();
+              truck.Mods.PrimaryColor = VehicleColor.MatteWhite;
+              truck.Mods[VehicleModType.Engine].Index = truck.Mods[VehicleModType.Engine].Count - 1;
+              truck.Mods[VehicleModType.Brakes].Index = truck.Mods[VehicleModType.Brakes].Count - 1;
+              truck.Mods[VehicleModType.Transmission].Index = truck.Mods[VehicleModType.Transmission].Count - 1;
+              truck.Doors[VehicleDoorIndex.BackLeftDoor].Open(loose: false, instantly: true);
+              truck.Doors[VehicleDoorIndex.BackRightDoor].Open(loose: false, instantly: true);
+
+              chipProp = World.CreateProp(new Model("prop_military_pickup_01"), Vector3.Zero, false, false);
+              chipProp.AttachTo(truck, new Vector3(0f, -1f, 0.9f), new Vector3(0f, 0f, 90f));
+              break;
+            case 1: // FIB
+            case 2: // Military
+              truck = World.CreateVehicle(VehicleHash.Mule3, loc.Chips[chipIndex].Pos, 0.0f);
+              if (truck == null) { Log.Write("truck spawn failed"); return; }
+              truck.PlaceOnGround();
+              truck.IsPersistent = true;
+              break;
+          }
+
+          heistSceneSpawned = true;
+        }
+
+        if (heistSceneSpawned)
+        {
+            if (truck == null || !truck.Exists() || truck.IsDead)
+            {
+                FailMission("the chip was destroyed");
+                return;
+            }
+
+            switch (chipIndex)
+            {
+              case 0: // Humane Lab
+                // Unlock garage doors
+                Function.Call(Hash.SET_STATE_OF_CLOSEST_DOOR_OF_TYPE, Game.GenerateHash("v_ilev_bl_shutter2"), 3627.71f, 3746.72f, 27.7f, /* locked */ false, 1.0, false);
+                Function.Call(Hash.SET_STATE_OF_CLOSEST_DOOR_OF_TYPE, Game.GenerateHash("v_ilev_bl_shutter2"), 3620.84f, 3751.53f, 27.7f, /* locked */ false, 1.0, false);
+                break;
+              case 1: // FIB
+              case 2: // Military
+                break;
+            }
+
+            if (distToChip < 6f && Function.Call<bool>(Hash.IS_ENTITY_ON_SCREEN, truck))
+            {
+                GoTo(Phase.Delivery);
+            }
+        }
     }
 
-    void EndHeist() { blip?.Delete(); blip = null; }
+    void EndHeist()
+    {
+        objectiveBlip?.Delete();
+        objectiveBlip = null;
+    }
 
     // ---- Delivery: drive the truck home without breaking it -------------------------
     void BeginDelivery()
@@ -302,7 +416,9 @@ public class QDayScript : Script
         damagePenalty = 0;
         Function.Call(Hash.SET_PLAYER_WANTED_LEVEL, Game.Player, chip.Wanted, false);
         Function.Call(Hash.SET_PLAYER_WANTED_LEVEL_NOW, Game.Player, false);
-        blip = World.CreateBlip(loc.Lab.Pos); blip.Color = BlipColor.Green; blip.ShowRoute = true;
+        objectiveBlip = World.CreateBlip(loc.Lab.Pos);
+        objectiveBlip.Color = BlipColor.Yellow;
+        objectiveBlip.ShowRoute = true;
         Screen.ShowSubtitle($"~b~Lester:~s~ Got it. Bring it to me. ~r~Every bump is decoherence.~s~", 6000);
         Log.Write($"pickup {chip.Key}, wanted {chip.Wanted}");
     }
@@ -321,6 +437,18 @@ public class QDayScript : Script
             return;
         }
 
+        switch (chipIndex)
+        {
+          case 0: // Humane Lab
+            // Unlock garage doors
+            Function.Call(Hash.SET_STATE_OF_CLOSEST_DOOR_OF_TYPE, Game.GenerateHash("v_ilev_bl_shutter2"), 3627.71f, 3746.72f, 27.7f, /* locked */ false, 1.0, false);
+            Function.Call(Hash.SET_STATE_OF_CLOSEST_DOOR_OF_TYPE, Game.GenerateHash("v_ilev_bl_shutter2"), 3620.84f, 3751.53f, 27.7f, /* locked */ false, 1.0, false);
+            break;
+          case 1: // FIB
+          case 2: // Military
+            break;
+        }
+
         // Body damage since pickup -> up to +5% on the error meter. Honest and visible.
         var lost = Math.Max(0, truckHealthAtPickup - truck.BodyHealth);
         damagePenalty = Math.Min(0.05, lost / 1000.0 * 0.05);
@@ -332,7 +460,8 @@ public class QDayScript : Script
     void EndDelivery()
     {
         Game.Player.WantedLevel = 0;
-        blip?.Delete(); blip = null;
+        objectiveBlip?.Delete();
+        objectiveBlip = null;
     }
 
     // ---- Calibrating: Atlas measures the delivered chip -----------------------------
@@ -410,10 +539,6 @@ public class QDayScript : Script
         lastResult = r;
         if (r.Ints is { Count: > 0 }) rng = new AtlasRandom(r.Ints);
         Function.Call(Hash.ANIMPOSTFX_PLAY, "DeathFailMPIn", 1500, false);
-        Function.Call(Hash.SET_RIOT_MODE_ENABLED, true);
-        // Deliberately NOT starting the storm here either -- it waits until the first
-        // arming pass has found people. Keeping the streets populated long enough to
-        // arm them is what makes the riot visible at all.
         Function.Call(Hash.SET_CREATE_RANDOM_COPS, false);
         stormStarted = false;
         armedTotal = 0;
@@ -482,7 +607,9 @@ public class QDayScript : Script
         if (Elapsed() > 300) GoTo(Phase.Ending);
     }
 
-    void EndQDay() => Function.Call(Hash.SET_RIOT_MODE_ENABLED, false);
+    void EndQDay()
+    {
+    }
 
     void BuildTicker(AtlasResult r)
     {
