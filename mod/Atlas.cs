@@ -37,9 +37,15 @@ public class AtlasResult
 
     public static AtlasResult Recorded() => new()
     {
-        Name = "qday", Status = "done", Kind = "qday", S = 2.711,
+        Name = "qday",
+        Status = "done",
+        Kind = "qday",
+        S = 2.711,
         Commit = "40bb90660f941c13f6ccc0d1998adfce33daa061d50459b0719ad999c93352f2",
-        Backend = "ibm_marrakesh", JobId = RecordedQDayJob, Certified = true, Grade = "hardware-accounted",
+        Backend = "ibm_marrakesh",
+        JobId = RecordedQDayJob,
+        Certified = true,
+        Grade = "hardware-accounted",
     };
 }
 
@@ -64,13 +70,19 @@ public sealed class Atlas : IDisposable
 
     static JsonObject Relationship(int a, int b) => new()
     {
-        ["type"] = "relationship", ["qubits"] = new JsonArray(a, b), ["paulis"] = new JsonObject { ["ZZ"] = 1.0 },
+        ["type"] = "relationship",
+        ["qubits"] = new JsonArray(a, b),
+        ["paulis"] = new JsonObject { ["ZZ"] = 1.0 },
     };
 
     // 12 qubits yields zero certified bytes on hardware; 64 is the verified production job.
     static JsonObject QDayParams() => new()
     {
-        ["mode"] = "qpu", ["num_qubits"] = 64, ["shots"] = 2048, ["output_bytes"] = 64, ["bell_witness"] = true,
+        ["mode"] = "qpu",
+        ["num_qubits"] = 64,
+        ["shots"] = 2048,
+        ["output_bytes"] = 64,
+        ["bell_witness"] = true,
         ["derive"] = new JsonObject { ["integers"] = new JsonObject { ["min"] = 0, ["max"] = 255, ["count"] = 64 } },
     };
 
@@ -112,7 +124,8 @@ public sealed class Atlas : IDisposable
             catch (Exception e) { r = new() { Status = "error", Message = e.Message }; }
             r.Name = name; r.Kind = kind;
             inbox.Enqueue(r);
-        }) { IsBackground = true, Name = $"QDay Atlas {name}" }.Start();
+        })
+        { IsBackground = true, Name = $"QDay Atlas {name}" }.Start();
     }
 
     // ---- the two jobs -----------------------------------------------------------

@@ -84,14 +84,14 @@ public class QDayScript : Script
 
         phases = new()
         {
-            [Phase.Idle]        = new(begin: BeginIdle,        tick: TickIdle,        end: EndIdle),
-            [Phase.Pitch]       = new(begin: BeginPitch,       tick: TickPitch),
-            [Phase.Heist]       = new(begin: BeginHeist,       tick: TickHeist,       end: EndHeist),
-            [Phase.Delivery]    = new(begin: BeginDelivery,    tick: TickDelivery,    end: EndDelivery),
+            [Phase.Idle] = new(begin: BeginIdle, tick: TickIdle, end: EndIdle),
+            [Phase.Pitch] = new(begin: BeginPitch, tick: TickPitch),
+            [Phase.Heist] = new(begin: BeginHeist, tick: TickHeist, end: EndHeist),
+            [Phase.Delivery] = new(begin: BeginDelivery, tick: TickDelivery, end: EndDelivery),
             [Phase.Calibrating] = new(begin: BeginCalibrating, tick: TickCalibrating, end: EndCalibrating),
-            [Phase.Threshold]   = new(begin: BeginThreshold,   tick: TickThreshold,   end: EndThreshold),
-            [Phase.QDay]        = new(begin: BeginQDay,        tick: TickQDay,        end: EndQDay),
-            [Phase.Ending]      = new(begin: BeginEnding,      tick: TickEnding),
+            [Phase.Threshold] = new(begin: BeginThreshold, tick: TickThreshold, end: EndThreshold),
+            [Phase.QDay] = new(begin: BeginQDay, tick: TickQDay, end: EndQDay),
+            [Phase.Ending] = new(begin: BeginEnding, tick: TickEnding),
         };
 
         Tick += OnTick;
@@ -104,7 +104,7 @@ public class QDayScript : Script
         string startupMsg = "~b~Q-DAY~s~ loaded.~n~  go to the ~y~Q~s~ blip to start~n~  F10 abort";
         if (debug)
         {
-          startupMsg += "~n~~y~DEBUG:~s~~n~  F5 teleport~n~  F6 skip wait~n~  F7 Q-Day now~n~  F8 Legion Square~n~  F9 start now";
+            startupMsg += "~n~~y~DEBUG:~s~~n~  F5 teleport~n~  F6 skip wait~n~  F7 Q-Day now~n~  F8 Legion Square~n~  F9 start now";
         }
         Notification.Show(startupMsg);
     }
@@ -194,9 +194,9 @@ public class QDayScript : Script
         var ped = Game.Player.Character;
         var target = phase switch
         {
-          Phase.Idle => loc.Start.Pos,
-          Phase.Heist => loc.Chips[chipIndex].Pos,
-          _ => loc.Lab.Pos,
+            Phase.Idle => loc.Start.Pos,
+            Phase.Heist => loc.Chips[chipIndex].Pos,
+            _ => loc.Lab.Pos,
         };
         // In Delivery, first put the player back in the truck (story missions can yank them away), then bring the truck home.
         if (phase == Phase.Delivery && truck != null && truck.Exists() && !ped.IsInVehicle(truck))
@@ -243,9 +243,9 @@ public class QDayScript : Script
         var inMission = Function.Call<bool>(Hash.GET_MISSION_FLAG);
         if (inMission)
         {
-          startBlip?.Delete();
-          startBlip = null;
-          return;
+            startBlip?.Delete();
+            startBlip = null;
+            return;
         }
 
         // Created here rather than in BeginIdle: the script loads straight into Idle without a
@@ -262,41 +262,41 @@ public class QDayScript : Script
         var dist = ped.Position.DistanceTo(loc.Start.Pos);
         if (dist > 50f)
         {
-          if (startRingSoundId.HasValue)
-          {
-            Audio.StopSound(startRingSoundId.Value);
-            Function.Call(Hash.RELEASE_NAMED_SCRIPT_AUDIO_BANK, "SCRIPT\\ASSASSINATION_MULTI");
-            startRingSoundId = null;
-          }
+            if (startRingSoundId.HasValue)
+            {
+                Audio.StopSound(startRingSoundId.Value);
+                Function.Call(Hash.RELEASE_NAMED_SCRIPT_AUDIO_BANK, "SCRIPT\\ASSASSINATION_MULTI");
+                startRingSoundId = null;
+            }
         }
         else
         {
-          if (!startRingSoundId.HasValue)
-          {
-            if (Function.Call<bool>(Hash.REQUEST_SCRIPT_AUDIO_BANK, "SCRIPT\\ASSASSINATION_MULTI", false, -1))
-              startRingSoundId = GTA.Audio.PlaySoundAt(loc.Start.Pos, "ASS_PAYPHONE_RING_master");
-          }
+            if (!startRingSoundId.HasValue)
+            {
+                if (Function.Call<bool>(Hash.REQUEST_SCRIPT_AUDIO_BANK, "SCRIPT\\ASSASSINATION_MULTI", false, -1))
+                    startRingSoundId = GTA.Audio.PlaySoundAt(loc.Start.Pos, "ASS_PAYPHONE_RING_master");
+            }
 
-          // On foot only: in a vehicle INPUT_CONTEXT is also the horn.
-          if (dist <= 2.5f && !ped.IsInVehicle() && !ped.IsDead)
-          {
-            Screen.ShowHelpTextThisFrame("Press ~INPUT_CONTEXT~ to start ~y~Q-DAY~s~.");
-            if (Game.IsControlJustPressed(GTA.Control.Context))
-              GoTo(Phase.Pitch);
-          }
+            // On foot only: in a vehicle INPUT_CONTEXT is also the horn.
+            if (dist <= 2.5f && !ped.IsInVehicle() && !ped.IsDead)
+            {
+                Screen.ShowHelpTextThisFrame("Press ~INPUT_CONTEXT~ to start ~y~Q-DAY~s~.");
+                if (Game.IsControlJustPressed(GTA.Control.Context))
+                    GoTo(Phase.Pitch);
+            }
         }
     }
 
     void EndIdle()
     {
-      startBlip?.Delete();
-      startBlip = null;
-      if (startRingSoundId.HasValue)
-      {
-        Audio.StopSound(startRingSoundId.Value);
-        Function.Call(Hash.RELEASE_NAMED_SCRIPT_AUDIO_BANK, "SCRIPT\\ASSASSINATION_MULTI");
-        startRingSoundId = null;
-      }
+        startBlip?.Delete();
+        startBlip = null;
+        if (startRingSoundId.HasValue)
+        {
+            Audio.StopSound(startRingSoundId.Value);
+            Function.Call(Hash.RELEASE_NAMED_SCRIPT_AUDIO_BANK, "SCRIPT\\ASSASSINATION_MULTI");
+            startRingSoundId = null;
+        }
     }
 
     /// <summary>
@@ -369,51 +369,51 @@ public class QDayScript : Script
 
         if (!heistSceneSpawned && distToChip < 100.0f)
         {
-          switch (chipIndex)
-          {
-            case ChipHumaneLabs: // Humane Labs
-              truck = World.CreateVehicle(VehicleHash.Mule3, new(3611.74f, 3737.08f, 28.92f), 325.04f);
-              if (truck == null) { Log.Write("truck spawn failed"); return; }
-              truck.PlaceOnGround();
-              truck.IsPersistent = true;
-              truck.Mods.PrimaryColor = VehicleColor.MatteWhite;
-              TuneTruck();
-              truck.Doors[VehicleDoorIndex.BackLeftDoor].Open(loose: false, instantly: true);
-              truck.Doors[VehicleDoorIndex.BackRightDoor].Open(loose: false, instantly: true);
+            switch (chipIndex)
+            {
+                case ChipHumaneLabs: // Humane Labs
+                    truck = World.CreateVehicle(VehicleHash.Mule3, new(3611.74f, 3737.08f, 28.92f), 325.04f);
+                    if (truck == null) { Log.Write("truck spawn failed"); return; }
+                    truck.PlaceOnGround();
+                    truck.IsPersistent = true;
+                    truck.Mods.PrimaryColor = VehicleColor.MatteWhite;
+                    TuneTruck();
+                    truck.Doors[VehicleDoorIndex.BackLeftDoor].Open(loose: false, instantly: true);
+                    truck.Doors[VehicleDoorIndex.BackRightDoor].Open(loose: false, instantly: true);
 
-              chipProp = World.CreateProp(new("prop_military_pickup_01"), Vector3.Zero, false, false);
-              chipProp.AttachTo(truck, new(0f, -1f, 0.9f), new(0f, 0f, 90f));
+                    chipProp = World.CreateProp(new("prop_military_pickup_01"), Vector3.Zero, false, false);
+                    chipProp.AttachTo(truck, new(0f, -1f, 0.9f), new(0f, 0f, 90f));
 
-              keypad = World.CreateProp(new("prop_ld_keypad_01"), new(3624.6f, 3749.3f, 28.95f), new(0f, 0f, 145.5f), false, false);
-              // TODO: spawn guard inside Humane Labs garage
-              break;
-            case ChipFIB: // FIB
-              truck = World.CreateVehicle(VehicleHash.Boxville2, new(178.55f, -698.54f, 32.94f), 68.86f);
-              if (truck == null) { Log.Write("truck spawn failed"); return; }
-              truck.PlaceOnGround();
-              truck.IsPersistent = true;
-              truck.Mods.PrimaryColor = VehicleColor.MetallicBlack;
-              TuneTruck();
+                    keypad = World.CreateProp(new("prop_ld_keypad_01"), new(3624.6f, 3749.3f, 28.95f), new(0f, 0f, 145.5f), false, false);
+                    // TODO: spawn guard inside Humane Labs garage
+                    break;
+                case ChipFIB: // FIB
+                    truck = World.CreateVehicle(VehicleHash.Boxville2, new(178.55f, -698.54f, 32.94f), 68.86f);
+                    if (truck == null) { Log.Write("truck spawn failed"); return; }
+                    truck.PlaceOnGround();
+                    truck.IsPersistent = true;
+                    truck.Mods.PrimaryColor = VehicleColor.MetallicBlack;
+                    TuneTruck();
 
-              chipProp = World.CreateProp(new("prop_military_pickup_01"), Vector3.Zero, false, false);
-              chipProp.AttachTo(truck, new(0f, -1.6f, 0.9f), new(0f, 0f, 90f));
-              // TODO: spawn FIB guards around the van
-              break;
-            case ChipMilitary: // Military
-              truck = World.CreateVehicle(VehicleHash.Mule3, loc.Chips[chipIndex].Pos, 0.0f);
-              if (truck == null) { Log.Write("truck spawn failed"); return; }
-              truck.PlaceOnGround();
-              truck.IsPersistent = true;
-              truck.Mods.PrimaryColor = VehicleColor.WornOliveArmyGreen;
-              TuneTruck();
+                    chipProp = World.CreateProp(new("prop_military_pickup_01"), Vector3.Zero, false, false);
+                    chipProp.AttachTo(truck, new(0f, -1.6f, 0.9f), new(0f, 0f, 90f));
+                    // TODO: spawn FIB guards around the van
+                    break;
+                case ChipMilitary: // Military
+                    truck = World.CreateVehicle(VehicleHash.Mule3, loc.Chips[chipIndex].Pos, 0.0f);
+                    if (truck == null) { Log.Write("truck spawn failed"); return; }
+                    truck.PlaceOnGround();
+                    truck.IsPersistent = true;
+                    truck.Mods.PrimaryColor = VehicleColor.WornOliveArmyGreen;
+                    TuneTruck();
 
-              chipProp = World.CreateProp(new("prop_military_pickup_01"), Vector3.Zero, false, false);
-              chipProp.AttachTo(truck, new(0f, -1f, 0.9f), new(0f, 0f, 90f));
-              break;
-          }
+                    chipProp = World.CreateProp(new("prop_military_pickup_01"), Vector3.Zero, false, false);
+                    chipProp.AttachTo(truck, new(0f, -1f, 0.9f), new(0f, 0f, 90f));
+                    break;
+            }
 
-          heistSceneSpawned = true;
-          heistCanReachTruck = false;
+            heistSceneSpawned = true;
+            heistCanReachTruck = false;
         }
 
         if (heistSceneSpawned)
@@ -426,32 +426,32 @@ public class QDayScript : Script
 
             switch (chipIndex)
             {
-              case ChipHumaneLabs: // Humane Lab
-                // Unlock garage doors if keypad is shot
-                bool unlocked = !keypad.Exists() || keypad.Health < 1000;
-                if (unlocked && !heistCanReachTruck)
-                {
-                  heistCanReachTruck = true;
-                  World.CreateParticleEffectNonLooped(new("core"), "ent_sht_electrical_box", keypad);
-                }
+                case ChipHumaneLabs: // Humane Lab
+                                     // Unlock garage doors if keypad is shot
+                    bool unlocked = !keypad.Exists() || keypad.Health < 1000;
+                    if (unlocked && !heistCanReachTruck)
+                    {
+                        heistCanReachTruck = true;
+                        World.CreateParticleEffectNonLooped(new("core"), "ent_sht_electrical_box", keypad);
+                    }
 
-                Function.Call(Hash.SET_STATE_OF_CLOSEST_DOOR_OF_TYPE, Game.GenerateHash("v_ilev_bl_shutter2"), 3627.71f, 3746.72f, 27.7f, /* locked */ !unlocked, /* open ratio */ unlocked ? 1.0 : 0.0, false);
-                Function.Call(Hash.SET_STATE_OF_CLOSEST_DOOR_OF_TYPE, Game.GenerateHash("v_ilev_bl_shutter2"), 3620.84f, 3751.53f, 27.7f, /* locked */ !unlocked, /* open ratio */ unlocked ? 1.0 : 0.0, false);
-                break;
-              case ChipFIB: // FIB
-              case ChipMilitary: // Military
-                // No blocker, can always reach the truck
-                heistCanReachTruck = true;
-                break;
+                    Function.Call(Hash.SET_STATE_OF_CLOSEST_DOOR_OF_TYPE, Game.GenerateHash("v_ilev_bl_shutter2"), 3627.71f, 3746.72f, 27.7f, /* locked */ !unlocked, /* open ratio */ unlocked ? 1.0 : 0.0, false);
+                    Function.Call(Hash.SET_STATE_OF_CLOSEST_DOOR_OF_TYPE, Game.GenerateHash("v_ilev_bl_shutter2"), 3620.84f, 3751.53f, 27.7f, /* locked */ !unlocked, /* open ratio */ unlocked ? 1.0 : 0.0, false);
+                    break;
+                case ChipFIB: // FIB
+                case ChipMilitary: // Military
+                                   // No blocker, can always reach the truck
+                    heistCanReachTruck = true;
+                    break;
             }
 
             if (heistCanReachTruck)
             {
-              var distToTruck = ped.Position.DistanceTo(truck.Position);
-              if (distToTruck < 6f && Function.Call<bool>(Hash.IS_ENTITY_ON_SCREEN, truck))
-              {
-                  GoTo(Phase.Delivery);
-              }
+                var distToTruck = ped.Position.DistanceTo(truck.Position);
+                if (distToTruck < 6f && Function.Call<bool>(Hash.IS_ENTITY_ON_SCREEN, truck))
+                {
+                    GoTo(Phase.Delivery);
+                }
             }
         }
     }
@@ -511,14 +511,14 @@ public class QDayScript : Script
 
         switch (chipIndex)
         {
-          case ChipHumaneLabs: // Humane Lab
-            // Unlock garage doors
-            Function.Call(Hash.SET_STATE_OF_CLOSEST_DOOR_OF_TYPE, Game.GenerateHash("v_ilev_bl_shutter2"), 3627.71f, 3746.72f, 27.7f, /* locked */ false, 1.0, false);
-            Function.Call(Hash.SET_STATE_OF_CLOSEST_DOOR_OF_TYPE, Game.GenerateHash("v_ilev_bl_shutter2"), 3620.84f, 3751.53f, 27.7f, /* locked */ false, 1.0, false);
-            break;
-          case ChipFIB: // FIB
-          case ChipMilitary: // Military
-            break;
+            case ChipHumaneLabs: // Humane Lab
+                                 // Unlock garage doors
+                Function.Call(Hash.SET_STATE_OF_CLOSEST_DOOR_OF_TYPE, Game.GenerateHash("v_ilev_bl_shutter2"), 3627.71f, 3746.72f, 27.7f, /* locked */ false, 1.0, false);
+                Function.Call(Hash.SET_STATE_OF_CLOSEST_DOOR_OF_TYPE, Game.GenerateHash("v_ilev_bl_shutter2"), 3620.84f, 3751.53f, 27.7f, /* locked */ false, 1.0, false);
+                break;
+            case ChipFIB: // FIB
+            case ChipMilitary: // Military
+                break;
         }
 
         // Body damage since pickup -> up to +5% on the error meter. Honest and visible.
@@ -587,10 +587,10 @@ public class QDayScript : Script
 
     void EndCalibrating()
     {
-      truck?.MarkAsNoLongerNeeded();
-      truck = null;
-      chipProp?.MarkAsNoLongerNeeded();
-      chipProp = null;
+        truck?.MarkAsNoLongerNeeded();
+        truck = null;
+        chipProp?.MarkAsNoLongerNeeded();
+        chipProp = null;
     }
 
     // ---- Threshold: the Q-Day job runs on IBM hardware, the player waits --------------
@@ -813,13 +813,13 @@ public static class Hud
     static int tickerFeed;
 
     const float CanvasW = 1280f, CanvasH = 720f;
-    const float TickerBarH  = 18f;     // thin enough to sit clear of the minimap
+    const float TickerBarH = 18f;     // thin enough to sit clear of the minimap
     const float TickerScale = 0.28f;   // matched to the bar height
     const float TickerSpeed = 150f;    // canvas pixels per SECOND
-    const float TickerGap   = 60f;     // space between messages
-    const float NoWrap      = 6000f;   // effectively disables GTA's text wrapping
-    const string TickerSep  = "  •  ";
-    static readonly Color TickerBarCol  = Color.FromArgb(205, 100, 0, 0);
+    const float TickerGap = 60f;     // space between messages
+    const float NoWrap = 6000f;   // effectively disables GTA's text wrapping
+    const string TickerSep = "  •  ";
+    static readonly Color TickerBarCol = Color.FromArgb(205, 100, 0, 0);
     static readonly Color TickerEdgeCol = Color.FromArgb(230, 190, 30, 30);
     static readonly Color TickerTextCol = Color.FromArgb(255, 255, 240, 235);
 
@@ -894,8 +894,8 @@ public class Locations
     {
         Start = new()
         {
-          Name = "Some payphone (mission start)",
-          Pos = new(395.24f, -798.65f, 28.78f)
+            Name = "Some payphone (mission start)",
+            Pos = new(395.24f, -798.65f, 28.78f)
         },
         Lab = new()
         {
@@ -909,8 +909,8 @@ public class Locations
         ],
         Ending = new()
         {
-          Name = "Vinewood sign",
-          Pos = new(776.88f, 1175.61f, 345.96f)
+            Name = "Vinewood sign",
+            Pos = new(776.88f, 1175.61f, 345.96f)
         },
     };
 }
