@@ -58,7 +58,7 @@ public class QDayScript : Script
     Vehicle truck;
     float truckHealthAtPickup;
     Blip objectiveBlip;                // the current objective
-    Blip truckBlip;                // the current objective
+    Blip truckBlip;                    // on the truck during Delivery, hidden while the player is in it
     Prop keypad;
 
 
