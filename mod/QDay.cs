@@ -33,6 +33,11 @@ public sealed class PhaseCallbacks(Action begin = null, Action tick = null, Acti
 public class QDayScript : Script
 {
     const int DefaultChipIndex = 0;
+
+    const int ChipHumaneLabs = 0;
+    const int ChipFIB = 1;
+    const int ChipMilitary = 2;
+
     // ---- state ---------------------------------------------------------------
     // The mission is a state machine over Phase. Every transition goes through GoTo(),
     // which runs the old phase's End, then the new phase's Begin; OnTick runs the
@@ -366,7 +371,7 @@ public class QDayScript : Script
         {
           switch (chipIndex)
           {
-            case 0: // Humane Labs
+            case ChipHumaneLabs: // Humane Labs
               truck = World.CreateVehicle(VehicleHash.Mule3, new(3611.74f, 3737.08f, 28.92f), 325.04f);
               if (truck == null) { Log.Write("truck spawn failed"); return; }
               truck.PlaceOnGround();
@@ -382,7 +387,7 @@ public class QDayScript : Script
               keypad = World.CreateProp(new("prop_ld_keypad_01"), new(3624.6f, 3749.3f, 28.95f), new(0f, 0f, 145.5f), false, false);
               // TODO: spawn guard inside Humane Labs garage
               break;
-            case 1: // FIB
+            case ChipFIB: // FIB
               truck = World.CreateVehicle(VehicleHash.Boxville2, new(178.55f, -698.54f, 32.94f), 68.86f);
               if (truck == null) { Log.Write("truck spawn failed"); return; }
               truck.PlaceOnGround();
@@ -394,7 +399,7 @@ public class QDayScript : Script
               chipProp.AttachTo(truck, new(0f, -1.6f, 0.9f), new(0f, 0f, 90f));
               // TODO: spawn FIB guards around the van
               break;
-            case 2: // Military
+            case ChipMilitary: // Military
               truck = World.CreateVehicle(VehicleHash.Mule3, loc.Chips[chipIndex].Pos, 0.0f);
               if (truck == null) { Log.Write("truck spawn failed"); return; }
               truck.PlaceOnGround();
@@ -421,7 +426,8 @@ public class QDayScript : Script
 
             switch (chipIndex)
             {
-              case 0: // Humane Lab
+              case ChipHumaneLabs: // Humane Lab
+                // Unlock garage doors if keypad is shot
                 bool unlocked = !keypad.Exists() || keypad.Health < 1000;
                 if (unlocked && !heistCanReachTruck)
                 {
@@ -429,12 +435,12 @@ public class QDayScript : Script
                   World.CreateParticleEffectNonLooped(new("core"), "ent_sht_electrical_box", keypad);
                 }
 
-                // Unlock garage doors if keypad is shot
                 Function.Call(Hash.SET_STATE_OF_CLOSEST_DOOR_OF_TYPE, Game.GenerateHash("v_ilev_bl_shutter2"), 3627.71f, 3746.72f, 27.7f, /* locked */ !unlocked, /* open ratio */ unlocked ? 1.0 : 0.0, false);
                 Function.Call(Hash.SET_STATE_OF_CLOSEST_DOOR_OF_TYPE, Game.GenerateHash("v_ilev_bl_shutter2"), 3620.84f, 3751.53f, 27.7f, /* locked */ !unlocked, /* open ratio */ unlocked ? 1.0 : 0.0, false);
                 break;
-              case 1: // FIB
-              case 2: // Military
+              case ChipFIB: // FIB
+              case ChipMilitary: // Military
+                // No blocker, can always reach the truck
                 heistCanReachTruck = true;
                 break;
             }
@@ -505,13 +511,13 @@ public class QDayScript : Script
 
         switch (chipIndex)
         {
-          case 0: // Humane Lab
+          case ChipHumaneLabs: // Humane Lab
             // Unlock garage doors
             Function.Call(Hash.SET_STATE_OF_CLOSEST_DOOR_OF_TYPE, Game.GenerateHash("v_ilev_bl_shutter2"), 3627.71f, 3746.72f, 27.7f, /* locked */ false, 1.0, false);
             Function.Call(Hash.SET_STATE_OF_CLOSEST_DOOR_OF_TYPE, Game.GenerateHash("v_ilev_bl_shutter2"), 3620.84f, 3751.53f, 27.7f, /* locked */ false, 1.0, false);
             break;
-          case 1: // FIB
-          case 2: // Military
+          case ChipFIB: // FIB
+          case ChipMilitary: // Military
             break;
         }
 
@@ -781,12 +787,12 @@ public static class Hud
     {
         var errText = double.IsNaN(err) ? "--" : (err * 100).ToString("0.00") + "%";
         var color = double.IsNaN(err) ? Color.White : (err <= threshold ? Color.LimeGreen : Color.OrangeRed);
-        new ContainerElement(new PointF(940, 140), new SizeF(320, 92), Color.FromArgb(160, 0, 0, 0)).Draw();
-        new TextElement("Q-DAY  " + phase.ToString().ToUpper(), new PointF(950, 144), 0.42f, Color.White, Font.ChaletLondon, Alignment.Left).Draw();
-        new TextElement($"logical qubits  {logical} / 3", new PointF(950, 168), 0.38f, Color.White, Font.ChaletLondon, Alignment.Left).Draw();
-        new TextElement($"error rate  {errText}  penalty {penalty:P2}  threshold {threshold * 100:0}%", new PointF(950, 190), 0.38f, color, Font.ChaletLondon, Alignment.Left).Draw();
+        new ContainerElement(new PointF(920, 140), new SizeF(340, 92), Color.FromArgb(160, 0, 0, 0)).Draw();
+        new TextElement("Q-DAY  " + phase.ToString().ToUpper(), new PointF(930, 144), 0.42f, Color.White, Font.ChaletLondon, Alignment.Left).Draw();
+        new TextElement($"logical qubits  {logical} / 3", new PointF(930, 168), 0.38f, Color.White, Font.ChaletLondon, Alignment.Left).Draw();
+        new TextElement($"error rate  {errText}  penalty {penalty:P2}  threshold {threshold * 100:0}%", new PointF(930, 190), 0.38f, color, Font.ChaletLondon, Alignment.Left).Draw();
         if (phase == Phase.Calibrating || phase == Phase.Threshold)
-            new TextElement(phase == Phase.Threshold ? "IBM hardware queue..." : "calibrating on Atlas...", new PointF(950, 212), 0.34f, Color.LightBlue, Font.ChaletLondon, Alignment.Left).Draw();
+            new TextElement(phase == Phase.Threshold ? "IBM hardware queue..." : "calibrating on Atlas...", new PointF(930, 212), 0.34f, Color.LightBlue, Font.ChaletLondon, Alignment.Left).Draw();
     }
 
     // ---- the leak ticker ------------------------------------------------
