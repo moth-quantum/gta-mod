@@ -39,6 +39,7 @@ static class Program
         Synthetic(g);
         Bank(g);
         Wording(g);
+        Runs(g);
         OfflineClient(g);
         if (args.Contains("live")) LiveClient(g);
 
@@ -64,21 +65,22 @@ static class Program
     // ---- district file ---------------------------------------------------------------
     static void Validation()
     {
-        const string districts = "\"districts\":[{\"id\":0,\"name\":\"a\"},{\"id\":1,\"name\":\"b\"},{\"id\":2,\"name\":\"c\"}]";
+        const string districts = "\"districts\":[{\"id\":0,\"name\":\"a\",\"centre\":[0,0,0]},{\"id\":1,\"name\":\"b\",\"centre\":[1,0,0]},{\"id\":2,\"name\":\"c\",\"centre\":[2,0,0]}]";
         const string links = "\"links\":[{\"a\":0,\"b\":1,\"walls\":[]},{\"a\":1,\"b\":2,\"walls\":[]}]";
         Check(Accepts($"{{{districts},{links},\"start\":0,\"stops\":[2]}}"), "a good small file is accepted");
         var bad = new Dictionary<string, string>
         {
-            ["ids out of order"] = $"{{\"districts\":[{{\"id\":1,\"name\":\"a\"}},{{\"id\":0,\"name\":\"b\"}}],\"links\":[{{\"a\":0,\"b\":1}}],\"start\":0,\"stops\":[1]}}",
+            ["ids out of order"] = $"{{\"districts\":[{{\"id\":1,\"name\":\"a\",\"centre\":[0,0,0]}},{{\"id\":0,\"name\":\"b\",\"centre\":[1,0,0]}}],\"links\":[{{\"a\":0,\"b\":1}}],\"start\":0,\"stops\":[1]}}",
             ["link to a missing district"] = $"{{{districts},\"links\":[{{\"a\":0,\"b\":3}}],\"start\":0,\"stops\":[2]}}",
             ["link to itself"] = $"{{{districts},\"links\":[{{\"a\":1,\"b\":1}},{{\"a\":0,\"b\":1}},{{\"a\":1,\"b\":2}}],\"start\":0,\"stops\":[2]}}",
             ["duplicate link, reversed"] = $"{{{districts},\"links\":[{{\"a\":0,\"b\":1}},{{\"a\":1,\"b\":0}},{{\"a\":1,\"b\":2}}],\"start\":0,\"stops\":[2]}}",
+            ["a district with no centre"] = $"{{\"districts\":[{{\"id\":0}},{{\"id\":1,\"centre\":[1,0,0]}}],\"links\":[{{\"a\":0,\"b\":1}}],\"start\":0,\"stops\":[1]}}",
             ["start missing"] = $"{{{districts},{links},\"stops\":[2]}}",
             ["stops missing"] = $"{{{districts},{links},\"start\":0}}",
             ["no stops"] = $"{{{districts},{links},\"start\":0,\"stops\":[]}}",
             ["stop not a district"] = $"{{{districts},{links},\"start\":0,\"stops\":[9]}}",
             ["stop unreachable"] = $"{{{districts},\"links\":[{{\"a\":0,\"b\":1}}],\"start\":0,\"stops\":[2]}}",
-            ["more than 20 districts"] = "{\"districts\":[" + string.Join(",", Enumerable.Range(0, 21).Select(i => $"{{\"id\":{i}}}")) + "],\"links\":[{\"a\":0,\"b\":1}],\"start\":0,\"stops\":[1]}",
+            ["more than 20 districts"] = "{\"districts\":[" + string.Join(",", Enumerable.Range(0, 21).Select(i => $"{{\"id\":{i},\"centre\":[0,0,0]}}")) + "],\"links\":[{\"a\":0,\"b\":1}],\"start\":0,\"stops\":[1]}",
         };
         foreach (var kv in bad) Check(!Accepts(kv.Value), $"district file with {kv.Key} is rejected");
     }
@@ -316,6 +318,10 @@ static class Program
         Check(hud.Contains("simulation"), "HUD calls it a simulation");
         Check(hud.Contains("layout 1 of 1"), "HUD shows layout k of n");
         Check(!hud.Contains('%') && !hud.Contains("p="), "HUD shows no probability");
+        var repaired = Lockdown.Choose(g, [new Measurement { Bitstring = string.Concat(Enumerable.Range(0, g.Count).Select(i => g.Required.Contains(i) ? (i == g.Start ? '0' : '1') : '0')), Count = 3 }]);
+        Check(repaired.Breach, "wording case needs a repair");
+        Check(!string.Join("\n", Lockdown.HudLines(repaired)).Contains("breach", StringComparison.OrdinalIgnoreCase), "HUD does not mention a repair");
+        Check(string.Join("\n", Lockdown.LogLines(g, repaired)).Contains("lockdown breach: opened"), "log lists every link a repair opened");
         Check(string.Join("\n", Lockdown.LogLines(g, l)).Contains("simulation"), "log calls it a simulation");
         Check(string.Join("\n", Lockdown.LogLines(g, l)).Contains("p=1.23%"), "log has the probability");
         Check(Lockdown.TargetSource(false, true, "ibm_marrakesh") == "Q-Day numbers from ibm_marrakesh", "certified numbers name the hardware");
@@ -324,6 +330,72 @@ static class Program
     }
 
     // ---- the real Atlas client ----------------------------------------------------------
+    // ---- one playthrough: the five paths step 7 relies on -------------------------------
+    static void Runs(DistrictGraph g)
+    {
+        using Atlas atlas = new("", true);   // offline, so no credits; hand-built results stand in for live ones
+        var ints = SyntheticInts(3);
+        AtlasResult Certified() => new() { Ints = ints, Certified = true, Backend = "ibm_marrakesh" };
+        var bits = new string('0', g.Count);
+        AtlasResult Live(string name, string job = "live-job") => new()
+        {
+            Name = name, Kind = "lockdown", Status = "done", Backend = "aer", JobId = job,
+            Measurements = [new Measurement { Bitstring = bits, Count = 9, Probability = 1 }],
+        };
+
+        // A result arriving before the escape is kept and used, and names the hardware.
+        LockdownRun run = new(g);
+        run.Submit(atlas, Certified());
+        run.Store(Live(run.JobName));
+        Check(run.Begin() && run.Layout.JobId == "live-job", "a stored result is used");
+        Check(run.Layout.TargetSource == "Q-Day numbers from ibm_marrakesh", "certified numbers name the hardware on the HUD");
+        Check(run.Layout.Backend == "aer", "the layout reports the simulator as its backend");
+
+        // After the layout is settled a late result changes nothing.
+        run.Store(Live(run.JobName, "late-job"));
+        Check(run.Layout.JobId == "live-job", "a late result is ignored");
+
+        // A job from an aborted run can't land in the next one, and names differ per run.
+        run.Submit(atlas, Certified());
+        var first = run.JobName;
+        run.Reset();
+        run.Submit(atlas, Certified());
+        Check(first != run.JobName && first != null, "each run gets its own job name");
+        run.Store(Live(first, "stale-job"));
+        run.Begin();
+        Check(run.Layout.JobId != "stale-job", "a result from an earlier run is ignored");
+        Check(run.Layout.TargetSource == "recorded bank", "with no result in hand the escape uses the bank");
+
+        // Recorded() has no numbers: F6, F7 and the 180 s hardware timeout all come through here.
+        run.Submit(atlas, AtlasResult.Recorded());
+        Check(run.JobName == null, "the recorded Q-Day result sends no job");
+        run.Begin();
+        Check(run.Layout.TargetSource == "recorded bank" && run.Layout.JobId != null && run.Layout.Rank > 0, "the recorded Q-Day result goes to the bank");
+
+        // A failed job goes to the bank too.
+        run.Submit(atlas, Certified());
+        run.Store(new() { Name = run.JobName, Kind = "lockdown", Status = "error", Message = "boom" });
+        run.Begin();
+        Check(run.Layout.TargetSource == "recorded bank", "a failed job goes to the bank");
+
+        // Uncertified numbers never claim hardware.
+        run.Submit(atlas, new() { Ints = ints, Certified = false, Backend = "ibm_marrakesh" });
+        run.Store(Live(run.JobName));
+        run.Begin();
+        Check(run.Layout.TargetSource.StartsWith("local random"), "uncertified numbers are labelled local random");
+
+        // Reset clears the layout, as F10 and a failed mission do through BeginIdle.
+        run.Reset();
+        Check(run.Layout == null && run.JobName == null, "reset clears the run");
+
+        // A refused district file skips the escape rather than stopping it.
+        LockdownRun none = new(null);
+        none.Submit(atlas, Certified());
+        Check(!none.Begin(), "no district file means no escape");
+
+        while (atlas.Take() != null) { }
+    }
+
     static AtlasResult Await(Atlas atlas, int seconds)
     {
         for (int i = 0; i < seconds * 10; i++)

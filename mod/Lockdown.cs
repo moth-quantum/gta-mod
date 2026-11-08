@@ -38,6 +38,7 @@ public sealed class DistrictGraph
     public const int MaxDistricts = 20;   // graph-v1's qubit limit
 
     public List<string> Names = [];
+    public List<float[]> Centres = [];    // x, y, z per district
     public List<DistrictLink> Links = [];
     public int Start;
     public List<int> Stops = [];
@@ -57,6 +58,8 @@ public sealed class DistrictGraph
             int id = districts[i]["id"].GetValue<int>();
             if (id != i) throw new InvalidDataException($"district ids must be 0..n-1 in order, found {id} at position {i}");
             g.Names.Add(districts[i]["name"]?.GetValue<string>() ?? $"district {i}");
+            if (districts[i]["centre"] is not JsonArray { Count: 3 } c) throw new InvalidDataException($"district {i} needs a centre of x, y, z");
+            g.Centres.Add([c[0].GetValue<float>(), c[1].GetValue<float>(), c[2].GetValue<float>()]);
         }
 
         var links = root["links"] as JsonArray ?? throw new InvalidDataException("no links");
@@ -231,7 +234,7 @@ public static class Lockdown
     // ---- choosing a layout ---------------------------------------------------------
     /// <summary>
     /// The likeliest bitstring that keeps a route and seals enough; if none does, the likeliest
-    /// bitstring with the fewest borders opened along the way. Always returns a layout with a route.
+    /// bitstring with a near-minimal set of borders opened. Always returns a layout with a route.
     /// </summary>
     public static LockdownLayout Choose(DistrictGraph g, IEnumerable<Measurement> measurements)
     {
@@ -271,7 +274,10 @@ public static class Lockdown
         return o;
     }
 
-    /// <summary>For each stop in turn, 0-1 BFS from the start (open = 0, sealed = 1), opening the sealed links on the path.</summary>
+    /// <summary>
+    /// For each stop in turn, 0-1 BFS from the start (open = 0, sealed = 1), opening the sealed links on the path.
+    /// Near-minimal: each path is the cheapest for its stop, but together they can open a link more than strictly needed.
+    /// </summary>
     static void Repair(DistrictGraph g, LockdownLayout layout)
     {
         var adjacent = new List<(int to, int link)>[g.Count];
@@ -316,7 +322,7 @@ public static class Lockdown
     }
 
     // ---- what the player and the log are told ------------------------------------------
-    // The layout is a simulation, so nothing here may call it hardware. Probabilities stay in the log.
+    // The layout is a simulation, so nothing here may call it hardware. Probabilities and repairs stay in the log.
     /// <summary>Where the targets came from. Only certified Q-Day numbers count as hardware; the bank's were seeded on a laptop.</summary>
     public static string TargetSource(bool fromBank, bool certified, string qdayBackend) =>
         fromBank ? "recorded bank"
@@ -325,15 +331,13 @@ public static class Lockdown
 
     public static List<string> HudLines(LockdownLayout l)
     {
-        List<string> lines =
+        return
         [
             $"lockdown simulation  {l.Backend ?? "unknown"}",
             $"targets  {l.TargetSource}",
             l.Rank > 0 ? $"layout {l.Rank} of {l.Candidates}" : "no layout returned",
             $"job  {l.JobId ?? "none"}",
         ];
-        if (l.Breach) lines.Add("BREACH");
-        return lines;
     }
 
     public static List<string> LogLines(DistrictGraph g, LockdownLayout l)
