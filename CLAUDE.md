@@ -9,7 +9,7 @@ Read README.md first, then log/MORNING.md for what broke and why. PLAN.md sectio
 - `setup/`              Windows PC setup: WINDOWS_SETUP.md, bootstrap_windows.ps1, install_loaders.ps1
 - `log/`                playtest notes (MORNING.md is the running log)
 - `tools/remote-box/`   Mac-side helpers for driving a cloud PC by keystrokes
-- `mod/Lockdown.cs`     escape lockdown logic, free of game types; `mod/LockdownGame.cs` draws it; `mod/lockdown_districts.json` is the district file (placeholder for now)
+- `mod/Lockdown.cs`, `mod/LockdownRun.cs` escape lockdown logic and one run's state, free of game types; `mod/LockdownGame.cs` draws it; `mod/lockdown_districts.json` is the district file (placeholder for now, format in `docs/lockdown-districts.md`)
 - `tests/LockdownCheck/` net8 checks for the lockdown logic and Atlas client: `dotnet run --project tests/LockdownCheck`
 - `tools/lockdown_probe.py` measures graph-v1 outside the game; `tools/record_lockdowns.py` records `recorded/lockdown_NN.json` and must be rerun when the district file changes
 
