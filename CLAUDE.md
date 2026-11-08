@@ -9,6 +9,9 @@ Read README.md first, then log/MORNING.md for what broke and why. PLAN.md sectio
 - `setup/`              Windows PC setup: WINDOWS_SETUP.md, bootstrap_windows.ps1, install_loaders.ps1
 - `log/`                playtest notes (MORNING.md is the running log)
 - `tools/remote-box/`   Mac-side helpers for driving a cloud PC by keystrokes
+- `mod/Lockdown.cs`     escape lockdown logic, free of game types; `mod/LockdownGame.cs` draws it; `mod/lockdown_districts.json` is the district file (placeholder for now)
+- `tests/LockdownCheck/` net8 checks for the lockdown logic and Atlas client: `dotnet run --project tests/LockdownCheck`
+- `tools/lockdown_probe.py` measures graph-v1 outside the game; `tools/record_lockdowns.py` records `recorded/lockdown_NN.json` and must be rerun when the district file changes
 
 ## Rules
 - The Atlas key lives only in the game's `scripts\QDay.ini` (`[Atlas] ApiKey`), never in a file in this repo. The repo's `mod/QDay.ini` keeps `ApiKey` empty. No key, or `Offline = true`, plays from the recorded results.
@@ -16,6 +19,7 @@ Read README.md first, then log/MORNING.md for what broke and why. PLAN.md sectio
 - Single player only. Never run with GTA Online.
 - Error rate = 1 - mean ZZ computed from `measurements` counts, not from `tomography` (that is the ideal state).
 - Q-Day QRNG job: `num_qubits: 64, shots: 2048, mode: qpu`. 12 qubits yields zero certified bytes on hardware. On `emu` the circuit is capped at 20 qubits including the 8 witness qubits, and the byte budget is flaky (1393 bits one run, 13 the next); the mod has no emu path. If a job returns no bytes the mod falls back to System.Random for the chaos seed and the result says `certified: false`. Production is the qpu path, verified.
+- The lockdown layout is a simulation (`emu`, live and bank); the hardware part is the Q-Day numbers that set the targets. Say so on the HUD and in logs. `fake` takes 13-20+ minutes at 20 qubits. No `qpu` in live runs.
 - graph-v1 `io` knobs other than seeds fail or are ignored on fake backends. Use the chip ladder instead.
 
 ## Game: GTA V Legacy
