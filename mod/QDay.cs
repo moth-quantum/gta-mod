@@ -182,9 +182,13 @@ public class QDayScript : Script
         // recording that used them is obvious.
         if (e.KeyCode == Keys.F9 && phase == Phase.Idle) { Log.Write("DEBUG F9 start"); GoTo(Phase.Pitch); }
         if (e.KeyCode == Keys.F5) DebugTeleport();
-        if (e.KeyCode == Keys.F6 && phase == Phase.QDay) { Log.Write("DEBUG F6 skip the riot"); GoTo(Phase.Escape); }   // before the Threshold line, which lands in QDay
-        if (e.KeyCode == Keys.F6 && phase == Phase.Calibrating) { Log.Write("DEBUG F6 recorded calibration"); FinishCalibration(chipIndex == loc.Chips.Count - 1 ? 0.0173 : 0.085); }
-        if (e.KeyCode == Keys.F6 && phase == Phase.Threshold) { Log.Write("DEBUG F6 recorded qday"); StartQDay(AtlasResult.Recorded()); }
+        // Else-ifs on the phase at the moment of the press: acting moves the phase on, so separate checks would chain one press through several phases.
+        if (e.KeyCode == Keys.F6)
+        {
+            if (phase == Phase.Calibrating) { Log.Write("DEBUG F6 in Calibrating: recorded calibration"); FinishCalibration(chipIndex == loc.Chips.Count - 1 ? 0.0173 : 0.085); }
+            else if (phase == Phase.Threshold) { Log.Write("DEBUG F6 in Threshold: recorded qday"); StartQDay(AtlasResult.Recorded()); }
+            else if (phase == Phase.QDay) { Log.Write("DEBUG F6 in QDay: skip the riot"); GoTo(Phase.Escape); }
+        }
         if (e.KeyCode == Keys.F8) { Game.Player.Character.Position = new(195.0f, -933.0f, 30.7f); Log.Write("DEBUG F8 teleport to Legion Square"); }
         if (e.KeyCode == Keys.F7)
         {
@@ -655,17 +659,27 @@ public class QDayScript : Script
     // the arming pass regularly found nobody at all.
     const float ArmRadius = 150f;
 
+    const double RiotArmSeconds = 2, EscapeArmSeconds = 4;
+
     void TickQDay()
     {
         if (CheckForPlayerDeath()) return;
 
+        TickRiotWorld(RiotArmSeconds);
+        Hud.Ticker(ticker);
+        if (Elapsed() > 300) GoTo(Phase.Escape);
+    }
+
+    /// <summary>The riot's world state, kept up through Q-Day and the escape.</summary>
+    void TickRiotWorld(double armEverySeconds)
+    {
         // Money does not exist any more.
         Game.Player.Money = 0;
         Function.Call(Hash.DISPLAY_CASH, false);
         Function.Call(Hash.HIDE_HUD_COMPONENT_THIS_FRAME, 3);
 
-        // Everyone goes mental: arm and enrage nearby peds every two seconds, chosen by Atlas randomness.
-        if ((DateTime.UtcNow - lastArm).TotalSeconds > 2)
+        // Everyone goes mental: arm and enrage nearby peds on a timer, chosen by Atlas randomness.
+        if ((DateTime.UtcNow - lastArm).TotalSeconds > armEverySeconds)
         {
             lastArm = DateTime.UtcNow;
             // MUST come before the loop: EnsureRelationships is what creates the
@@ -706,8 +720,6 @@ public class QDayScript : Script
                 Log.Write($"riot: {armedTotal} armed, starting the storm");
             }
         }
-        Hud.Ticker(ticker);
-        if (Elapsed() > 300) GoTo(Phase.Escape);
     }
 
     void EndQDay()
@@ -748,6 +760,7 @@ public class QDayScript : Script
     {
         if (CheckForPlayerDeath()) return;
 
+        TickRiotWorld(EscapeArmSeconds);
         LockdownGame.DrawWalls(lockdown.Graph, lockdown.Layout);
         LockdownGame.DrawHud(lockdown.Layout);
 
