@@ -87,6 +87,7 @@ public static class ForceFieldGame
     /// <summary>Removes every wall, blip and particle. Safe to call with nothing up.</summary>
     public static void Clear()
     {
+        RoadTestGame.Clear();   // before the check below, and on every way out that clears the walls
         if (sites.Count == 0) return;
         foreach (var site in sites) Remove(site);
         Log.Write($"forcefield: cleared {sites.Count} walls");
@@ -127,6 +128,19 @@ public static class ForceFieldGame
         float z = ground > 0f && Math.Abs(ground - ent.Position.Z) < 15f ? ground : ent.Position.Z - 1f;
         sites.Add(new(new() { X = at.X, Y = at.Y, Z = z, Heading = heading, Width = TestWallWidth }, true));
         Log.Write($"DEBUG F4 test wall {count + 1} at {at.X:0.0}, {at.Y:0.0}, {z:0.0} heading {heading:0.0} width {TestWallWidth}");
+    }
+
+    /// <summary>The most recent F4 wall, for the road switching experiment.</summary>
+    public static bool LastTestWall(out WallSegment segment)
+    {
+        for (int i = sites.Count - 1; i >= 0; i--)
+            if (sites[i].Test)
+            {
+                segment = sites[i].Segment;
+                return true;
+            }
+        segment = default;
+        return false;
     }
 
     /// <summary>Call every tick in every phase: walls are only up during the escape, and test walls at any time.</summary>

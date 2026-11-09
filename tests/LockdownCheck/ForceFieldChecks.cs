@@ -24,6 +24,135 @@ static class ForceFieldChecks
         FullSpeed();
         Table();
         Bake();
+        RoadTestChecks();
+    }
+
+    // ---- the road switching experiment ------------------------------------------------
+    static void RoadTestChecks()
+    {
+        // A wall on a road running north: the area starts past it and carries on north.
+        var wall = ForceField.Segment(At(100, 200, 30, 0));
+        var a = RoadTest.Stretch(wall, 20);
+        Check(Near(a.OriginX, 100) && Near(a.OriginY, 205) && Near(a.ExtentX, 100) && Near(a.ExtentY, 225), "the area runs from 5 m past the wall for 20 m, the way the wall's normal points");
+        Check(Near(a.Width, 12), "the area is as wide as the wall");
+        Check(a.OriginZ < 30 && a.ExtentZ > 30, "the area's height band straddles the road");
+        Check(Near(a.Length, 20) && Near(RoadTest.Stretch(wall, 50).Length, 50), "the lengths are as asked for");
+
+        Check(a.Contains(100, 215, 30), "a node on the road past the wall is in the area");
+        Check(a.Contains(105, 210, 30) && !a.Contains(107, 210, 30), "the area's edges across the road are at half its width");
+        Check(!a.Contains(100, 200, 30), "the wall itself is outside the area");
+        Check(!a.Contains(100, 204, 30), "the gap past the wall is outside the area");
+        Check(!a.Contains(100, 195, 30), "the player's side of the wall is outside the area");
+        Check(!a.Contains(100, 226, 30), "beyond the far edge is outside the area");
+        Check(!a.Contains(100, 215, 45), "a road high overhead is outside the area");
+        Check(!a.Contains(100, 215, 15), "a road far below is outside the area");
+
+        var (ex, ey) = ForceField.Forward(90);
+        var west = RoadTest.Stretch(ForceField.Segment(At(100, 200, 30, 90)), 50);
+        Check(Near(west.OriginX, 100 + ex * 5) && Near(west.OriginY, 200 + ey * 5) && Near(west.ExtentX, 100 + ex * 55) && Near(west.ExtentY, 200 + ey * 55), "a road running west gets its area further west");
+        foreach (float heading in new float[] { 0, 37, 90, 145, 180, 233, 270, 311 })
+        {
+            var s = ForceField.Segment(At(-50, 80, 10, heading));
+            var area = RoadTest.Stretch(s, 50);
+            bool wallOut = true;
+            for (int i = 0; i <= 8; i++) wallOut &= !area.Contains(s.PointX(i / 8f), s.PointY(i / 8f), s.Z);
+            Check(wallOut, $"no part of a wall at heading {heading} is in its area");
+            var (cx, cy) = area.Corner(-1, false);
+            var (dx, dy) = area.Corner(1, true);
+            Check(Near(area.Along(cx, cy), 0) && Near(Math.Abs(area.Across(cx, cy)), 6) && Near(area.Along(dx, dy), 50) && Near(Math.Abs(area.Across(dx, dy)), 6), $"the outline drawn at heading {heading} matches the area");
+        }
+
+        var v = RoadTest.Variants;
+        Check(v.Length == 16, "16 variants: eight flag combinations at two lengths");
+        Check(v.Select(x => (x.Length, x.Flag1, x.Flag2, x.Flag3)).Distinct().Count() == 16, "no variant repeats");
+        Check(v.Select((x, i) => x.Number == i + 1 && x.Count == 16).All(ok => ok), "variants are numbered in order");
+        Check(v.Take(8).All(x => !x.Flag3) && v.Skip(8).All(x => x.Flag3), "the network flag stays false until the rest are done");
+        Check(v[3].Label == "variant 4/16 length 50 m flags false,true,false", "the label says which variant was used");
+
+        var inside = new[] { true, true, false, false };
+        var r = RoadTest.Compare([false, true, false, true], [true, true, false, true], inside);
+        Check(r.InsideTurnedOff == 1 && r.InsideOff == 2 && r.Inside == 2 && !r.SameAsFirst, "a node turning off in the area is counted");
+        r = RoadTest.Compare([false, false, false, true], [false, false, true, false], inside);
+        Check(r.OutsideTurnedOff == 1 && r.OutsideTurnedOn == 1 && r.InsideTurnedOff == 0, "a change outside the area is counted apart, in both directions");
+        Check(RoadTest.Compare([true, false, true, false], [true, false, true, false], inside).SameAsFirst, "a node that was already off, like an alley, isn't a change");
+
+        Sequence();
+    }
+
+    // Plays the run with a clock. Applied is what decides whether a way out has to undo the road.
+    static void Sequence()
+    {
+        const int settle = 1500, route = 2000;
+        RoadTestRun run = new(settle, route);
+        int now = 1000;
+        List<RoadAction> seen = [];
+        void RunUntilIdle(RoadTestRun r)
+        {
+            for (int i = 0; i < 200 && (r.Active && !r.Idle); i++)
+            {
+                now += 100;
+                var a = r.Tick(now);
+                if (a != RoadAction.None) seen.Add(a);
+            }
+        }
+
+        Check(run.Tick(now) == RoadAction.None && !run.Applied && !run.Active, "nothing happens before the first press");
+        Check(!run.Stop(), "stopping with nothing on needs no undo");
+        Check(run.Press(now) == RoadAction.Prepare && !run.Applied, "the first press only finds the nodes and sets a route");
+        Check(run.Press(now) == RoadAction.Busy, "a press while measuring is ignored");
+        Check(!run.Stop(), "stopping before anything was switched off needs no undo");
+
+        run.Press(now);
+        seen.Clear();
+        RunUntilIdle(run);
+        Check(seen.SequenceEqual([RoadAction.Apply, RoadAction.ReadAfterApply, RoadAction.RouteOn, RoadAction.ReadRoute]), "a variant is applied, read as it stands, then the route is set again and read");
+        Check(run.Applied && run.Idle && run.Current.Number == 1, "the first variant stays on until the next press");
+
+        List<int> used = [run.Current.Number];
+        bool everyOneUndone = true;
+        while (true)
+        {
+            seen.Clear();
+            var press = run.Press(now);
+            everyOneUndone &= press == RoadAction.Undo && !run.Applied;
+            RunUntilIdle(run);
+            if (!run.Active) break;
+            used.Add(run.Current.Number);
+            everyOneUndone &= seen.Take(5).SequenceEqual([RoadAction.ReadAfterUndo, RoadAction.RouteOn, RoadAction.ReadRoute, RoadAction.Apply, RoadAction.ReadAfterApply]);
+        }
+        Check(used.SequenceEqual(Enumerable.Range(1, 16)), "pressing on tries each variant once, in order");
+        Check(everyOneUndone, "each variant is undone and read before the next is applied");
+        Check(seen.SequenceEqual([RoadAction.ReadAfterUndo, RoadAction.RouteOn, RoadAction.ReadRoute, RoadAction.Finish]) && !run.Applied, "the run finishes with the road back on");
+
+        // Every moment a way out could come: exactly those with a variant on have to undo.
+        bool undoRight = true;
+        for (int steps = 0; steps < 60; steps++)
+        {
+            RoadTestRun r = new(settle, route);
+            int t = 0;
+            r.Press(t);
+            bool on = false;
+            for (int i = 0; i < steps; i++)
+            {
+                t += 500;
+                var a = r.Tick(t);
+                if (a == RoadAction.Apply) on = true;
+                if (r.Idle)
+                {
+                    if (r.Press(t) == RoadAction.Undo) on = false;
+                }
+                else if (a == RoadAction.Undo) on = false;
+            }
+            undoRight &= r.Stop() == on && !r.Applied && !r.Active;
+        }
+        Check(undoRight, "whenever a way out comes, it undoes the road exactly when a variant is on");
+
+        run = new(settle, route);
+        run.Press(0);
+        while (!run.Idle) { now += 100; run.Tick(now); }
+        Check(run.Stop() && !run.Stop(), "undoing happens once, so clean-up running twice is safe");
+        run.Press(now);
+        Check(!run.Applied && run.Active, "a run can start again after being stopped");
     }
 
     static Wall At(float x, float y, float z, float heading, float width = 12f) => new() { X = x, Y = y, Z = z, Heading = heading, Width = width };

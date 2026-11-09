@@ -52,11 +52,17 @@ public static class LockdownGame
         ForceFieldGame.SetWalls(walls);
     }
 
-    public static void TickForceField() => ForceFieldGame.Tick();
+    public static void TickForceField()
+    {
+        ForceFieldGame.Tick();
+        RoadTestGame.Tick();
+    }
 
     public static void ClearForceField() => ForceFieldGame.Clear();
 
     public static void DropTestWall() => ForceFieldGame.DropTestWall();
+
+    public static void RoadTestKey(bool shift, bool control, Blip missionRoute, bool hideRoute) => RoadTestGame.Key(shift, control, missionRoute, hideRoute);
 
     /// <summary>Debug view: a blue marker at every sealed wall site. Call every frame while the escape runs.</summary>
     public static void DrawWalls(DistrictGraph g, LockdownLayout layout)

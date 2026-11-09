@@ -10,7 +10,7 @@ The placeholder district file has walls at the midpoints between districts rathe
 
 ## Setup
 
-Build `mod/`, copy `bin/QDay.dll` to `scripts\`, set `Debug = true` in `QDay.ini` and press F11 in game to reload scripts. F4 drops a 12 m wall 25 m ahead of the player, square to the way they're facing, and works in any phase, including with no mission running. Log lines below are in `scripts\QDay.log`.
+Build `mod/`, copy `bin/QDay.dll` to `scripts\`, set `Debug = true` in `QDay.ini` and press F11 in game to reload scripts. F4 drops a 12 m wall 25 m ahead of the player, square to the way they're facing, and works in any phase, including with no mission running. F3 is only for section G. Log lines below are in `scripts\QDay.log`.
 
 ## A. The wall
 
@@ -55,24 +55,54 @@ Build `mod/`, copy `bin/QDay.dll` to `scripts\`, set `Debug = true` in `QDay.ini
 
 25. **Escape:** press F7 then F6 to reach the escape. The log shows `forcefield: N walls up`, where N is the sealed walls in the layout, and sealed sites get walls and blips. With the placeholder data, they'll be in odd places.
 26. **Debug view:** the blue columns only appear with `Debug = true`. With `Debug = false`, there are no columns but the force field is still there, and F4 does nothing.
-27. **GPS:** the game's route to the objective doesn't know about the walls, so it can lead into one. I'd expect this, but please say how it plays, and also what AI traffic does at a wall, since the walls only affect the player. Section G is a possible fix for both.
+27. **GPS:** the game's route to the objective doesn't know about the walls, so it can lead into one. I'd expect this, but please say how it plays, and also what AI traffic does at a wall, since the walls only affect the player. Section G tests a possible fix for the GPS, and section H a simpler fallback.
 
-## G. Switching off the road under a wall (not built yet)
+## G. Switching off the road past a wall (experiment, Debug only)
 
-These checks are for later and can't be run on this branch. The idea is to switch off the road nodes under each sealed wall with `SET_ROADS_IN_ANGLED_AREA`, so the GPS routes round it and AI traffic avoids it, and to undo that with `SET_ROADS_BACK_TO_ORIGINAL_IN_ANGLED_AREA`. The native DB confirms both exist, but it leaves the flags that control them undocumented. A FiveM forum thread reports the plainer `SET_ROADS_IN_AREA` clearing traffic from a bridge, and I found nothing either way on the GPS, so these checks are what would show whether it works.
+This tests whether switching off road nodes makes the GPS route round a sealed road. It only works on an F4 test wall and the mission doesn't use it, so a pass here doesn't yet mean anything for the real walls. It uses `SET_ROADS_IN_ANGLED_AREA` to switch off and `SET_ROADS_BACK_TO_ORIGINAL_IN_ANGLED_AREA` to undo. The native DB confirms both exist but doesn't define the three BOOLs, and I found nothing either way on the GPS, so I don't know what this will do, and it hasn't been run in GTA. Nothing has been built for traffic, so the traffic checks are only there to see what happens.
 
-28. **The flags:** the log should show `GET_VEHICLE_NODE_IS_SWITCHED_OFF` going from false to true for the node under the wall, and back to false afterwards. This is what settles which of the three flags does what. The DB also describes that native as true on alleys and car parks, so only a change on the same node counts.
-29. **Finding the nodes:** road nodes are spaced well apart, so a thin area across the road can miss them all. Note how long the area has to be along the road before a node switches off.
-30. **Neighbouring roads:** the wall sites are mostly at junctions, so check that the roads crossing at the junction still work, and that switching off this road doesn't take them out too.
-31. **GPS:** with a route that runs through the wall, the route should move round it, comparing `GET_GPS_BLIP_ROUTE_LENGTH` before and after. Test nodes switched off before the route is set, and also after it's set, as the route may not refresh by itself. `BeginEscape` currently sets the route first, so the order may need to change.
-32. **Destination still reachable:** with all the walls for a layout up, `GET_GPS_BLIP_ROUTE_FOUND` stays true and the route still reaches the last stop. Switched-off nodes could split the road network differently from the districts that the route guarantee works from.
-33. **AI traffic:** new cars stop appearing on the road and avoid it from further away. Note what happens to cars already there as the wall goes up, and whether they pile up or block the player's open route.
-34. **Police and hostile drivers:** chasing cars should route round it or stop, rather than getting stuck at the wall, as the force field only pushes the player.
-35. **Far-away walls:** try a wall with its road nodes not loaded yet, more than a few hundred metres away, then drive there. The change has to hold when the nodes load.
-36. **Many walls:** switch off every wall in the worst layout, as the game may limit how many areas it can hold, and check that all of them take effect.
-37. **Undoing it:** after F10, dying, mission end and F11, the same nodes read as on again, and traffic and the GPS use the road. The native DB doesn't say whether this resets by itself when a script ends, so I'm assuming it doesn't and that every way out has to undo it. Also check that a mission started after each of those starts clean.
-38. **Crash or game closed mid-mission:** after restarting the game and loading a save, the road should be back to normal. A script can't clean up after a crash, so this is the one case that relies on the game.
+The area doesn't cover the wall. It starts 5 m past the wall and runs away from the player who dropped it, 12 m wide and 10 m above and below the wall's height, to avoid cutting open roads through a junction at the wall. It shows as a red outline on the road while it's on, and that outline is the first thing to check. There are 16 variants: all eight BOOL combinations, at 20 m and at 50 m. Those with the third BOOL true come last, because the DB ties it to network events and I want the others logged first in case one misbehaves.
+
+Please use a spare save and don't save the game during this section, since I don't know whether a switched-off road gets saved.
+
+**Keys:** drop a wall with F4, then:
+
+- **F3** starts the run, or undoes the current variant and applies the next. Each press takes about 7 seconds to finish, and F3 is ignored until then. The subtitle names the variant when it's ready.
+- **Shift+F3** undoes the current variant and stops.
+- **Ctrl+F3** only reads and logs the 12 nodes nearest the player, and changes nothing.
+
+**What it logs:** the first F3 logs each node near the wall, with its position and whether it's switched off. With no mission running, it also sets a green blip with a route about 250 m past the wall. During a mission it uses the mission's route, so start the run after the mission has started, and press Shift+F3 before starting one. Each variant then logs:
+
+- **`about to switch off`:** the reading just before the native call, so after a crash the last one of these says which variant caused it.
+- **`switched off`:** the node counts inside and outside the area, the IDs of any that changed, and the route as it stands.
+- **`route after setting it again`:** the route turned off and back on, then read 2 seconds later.
+- **`switched back`** and a second **`route after setting it again`:** the same readings after the undo.
+
+If a `switched back` line says `changed since first reading`, the undo didn't fully work, so please restart the game before trusting any later variant.
+
+28. **The flags:** on a straight road on flat ground, with no junction near, press F3 through all 16. Please report which variants turned nodes off in the area, using the `in area ... turned off` counts. The DB also describes the node native as true on alleys and car parks, so only a change counts, not the value on its own. If nothing ever changes, the node native may not be a reliable measure, so please check whether the route or traffic behaved differently anyway.
+29. **Finding the nodes:** road nodes are spaced well apart, so check the first log for how many nodes lie in each area. `in area 0 of 0 off` means the area held no node and says nothing about that variant. Say whether 20 m is enough or only 50 m works.
+30. **Neighbouring roads:** drop a wall with a junction just behind you, so the stretch runs away from it. Using a variant that works from check 28, the `outside` counts should show no change and the crossing roads should still route and carry traffic. Then repeat with the junction just ahead, past the wall, to see the harm if the stretch runs into one. Real walls would need to know which side of them faces away from the junction, which the district file doesn't say yet.
+31. **GPS:** with a working variant, watch whether the route line moves off the road, and compare the three lengths: `route` before the switch, `route before setting it again` and `route after setting it again`. The first change shows whether the route refreshes by itself, and the second whether it needs setting again. A generated route won't always run through the wall, so if it doesn't, try another spot, or start a mission and use its route.
+32. **Destination still reachable:** `found` stays true with a variant on. Whether the last stop stays reachable with every wall in a layout switched off can't be tested until this is on the real walls.
+33. **AI traffic:** with a working variant on, note whether new cars stop appearing on that stretch, what happens to cars already on it, and whether they pile up at its edge or block other roads.
+34. **Police and hostile drivers:** get chased along the road towards the stretch, and say whether the chasing cars route round it, stop or drive through.
+35. **Far away and back:** with a working variant on, drive more than a kilometre away, come back, then press Ctrl+F3 by the stretch. The nodes should still read as off once they've loaded again. Stored node IDs aren't read when you're over 200 m from the wall, as a stale ID could crash the game, so the log says `nodes not read` if you press F3 out there.
+36. **Many walls:** this can't be tested yet, because only one stretch is on at a time. The game may limit how many it can hold, so it needs testing with a full layout before the mission uses this.
+37. **Undoing it on every way out:** with a working variant on, try each of F10, dying, reaching the mission's end and F11, starting a fresh variant each time. For the mission's end, press F7 then F6 first, drop the wall, start the run and then press F5. The log should show `road switched back by clean-up`, including after F11, where the script is stopping so it's worth checking the line is there at all. That line is read straight after the undo, and says `nodes not read` after the F5 teleport, so the firmer test is to drive back, press Ctrl+F3 and compare with the first log by position, then check the GPS and traffic use the road again. The next run should also start clean.
+38. **Crash and fresh load:** a script can't clean up after a crash, so this relies on the game. With a working variant on:
+    - End `GTA5.exe` in Task Manager, restart the game and load the save. Drive to the coordinates in the log and press Ctrl+F3. The log adds to the old session rather than replacing it, so compare by position with the first reading, as node IDs may differ between sessions. Also check the GPS and traffic use the road. A road still off here would be serious, since nothing in the mod could put it right.
+    - Separately, load a save from the pause menu without closing the game, then do the same checks, and say whether the log shows `cleaning up world` at that point.
+
+## H. Hiding the route line (fallback, Debug only)
+
+If road switching doesn't move the route, this stops the GPS leading the player into a wall by not drawing the line at all. It's off by default and only read with `Debug = true`. Set `HideEscapeRoute = true` under `[General]` in `QDay.ini`, then press F11.
+
+39. **Log:** startup shows `hideEscapeRoute=True`, and with F7 then F6 the escape logs `route line hidden by HideEscapeRoute, stop blip kept`.
+40. **On the map:** there's no route line on the minimap or the pause map, and the yellow stop blip and blue `Sealed road` blips are still there. The escape only has one stop blip so far, the last stop, as the others have nothing to mark until their objectives are built. A waypoint the player sets still draws its own line, which this doesn't touch.
+41. **How it plays:** can you find your way to the blip without the line, and is that better than a line that leads into walls?
+42. **Off:** with `HideEscapeRoute = false` the line is back, and with it true and `Debug = false` the line is also there, as the setting is ignored.
 
 ## Reporting back
 
-For each section, please say whether it passed, and for any failure give the check number, what you saw and the matching log lines. Checks 7, 9, 14 and 20 are partly judgement calls, so your view on how they look and play is what's wanted.
+For each section, please say whether it passed, and for any failure give the check number, what you saw and the matching log lines. For section G, the log lines from check 28 are the main result, so please attach them even if everything looks fine. Checks 7, 9, 14, 20 and 41 are partly judgement calls, so your view on how they look and play is what's wanted.

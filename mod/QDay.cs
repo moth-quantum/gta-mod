@@ -75,7 +75,8 @@ public class QDayScript : Script
     readonly List<string> ticker = [];
     static readonly Locations loc = Locations.Default;
     readonly Atlas atlas;
-    readonly bool debug;               // [General] Debug in scripts\QDay.ini: enables the F4-F9 playtest keys
+    readonly bool debug;               // [General] Debug in scripts\QDay.ini: enables the F3-F9 playtest keys
+    readonly bool hideEscapeRoute;     // [General] HideEscapeRoute, only with Debug: no GPS line during the escape, the blip stays
 
     public QDayScript()
     {
@@ -102,12 +103,13 @@ public class QDayScript : Script
         Aborted += OnAborted;
         Interval = 0;
         debug = Settings.GetValue("General", "Debug", false);
-        Log.Write($"Q-DAY loaded. debug={debug}");
+        hideEscapeRoute = debug && Settings.GetValue("General", "HideEscapeRoute", false);
+        Log.Write($"Q-DAY loaded. debug={debug} hideEscapeRoute={hideEscapeRoute}");
 
         string startupMsg = "~b~Q-DAY~s~ loaded.~n~  go to the ~y~Q~s~ blip to start~n~  F10 abort";
         if (debug)
         {
-            startupMsg += "~n~~y~DEBUG:~s~~n~  F4 test wall~n~  F5 teleport~n~  F6 skip wait~n~  F7 Q-Day now~n~  F8 Legion Square~n~  F9 start now";
+            startupMsg += "~n~~y~DEBUG:~s~~n~  F3 road test~n~  F4 test wall~n~  F5 teleport~n~  F6 skip wait~n~  F7 Q-Day now~n~  F8 Legion Square~n~  F9 start now";
         }
         Notification.Show(startupMsg);
     }
@@ -185,6 +187,8 @@ public class QDayScript : Script
         if (e.KeyCode == Keys.F9 && phase == Phase.Idle) { Log.Write("DEBUG F9 start"); GoTo(Phase.Pitch); }
         if (e.KeyCode == Keys.F5) DebugTeleport();
         if (e.KeyCode == Keys.F4) LockdownGame.DropTestWall();
+        // F3 tries the next road switching variant on the last F4 wall, Shift+F3 stops and undoes it, Ctrl+F3 reads the nodes round the player.
+        if (e.KeyCode == Keys.F3) LockdownGame.RoadTestKey(e.Shift, e.Control, objectiveBlip, phase == Phase.Escape && hideEscapeRoute);
         // Else-ifs on the phase at the moment of the press: acting moves the phase on, so separate checks would chain one press through several phases.
         if (e.KeyCode == Keys.F6)
         {
@@ -755,7 +759,8 @@ public class QDayScript : Script
         if (!lockdown.Begin()) { GoTo(Phase.Ending); return; }
         objectiveBlip = World.CreateBlip(LockdownGame.LastStop(lockdown.Graph));
         objectiveBlip.Color = BlipColor.Yellow;
-        objectiveBlip.ShowRoute = true;
+        objectiveBlip.ShowRoute = !hideEscapeRoute;
+        if (hideEscapeRoute) Log.Write("DEBUG escape: route line hidden by HideEscapeRoute, stop blip kept");
         LockdownGame.RaiseForceField(lockdown.Graph, lockdown.Layout);
         Screen.ShowSubtitle("~b~Lester:~s~ The city's locked down. Get out while there's still a road.", 6000);
     }
