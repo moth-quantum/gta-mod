@@ -41,6 +41,7 @@ static class Program
         Wording(g);
         Runs(g);
         OfflineClient(g);
+        ForceFieldChecks.Run(g, Resource("recorded.lockdown_districts.json"), Check);
         if (args.Contains("live")) LiveClient(g);
 
         Console.WriteLine(failures == 0 ? "all checks passed" : $"{failures} CHECKS FAILED");

@@ -1,6 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
-  <!-- Runs the lockdown logic and the Atlas client without the game. QDay.csproj is net48, which does
+  <!-- Runs the lockdown and force field logic and the Atlas client without the game. QDay.csproj is net48, which does
        not run on macOS or Linux, so this links the game-free source files into a net8 console app.
        Run it with no arguments for the checks (non-zero exit on any failure), with "live" to add one
        real emu job (needs MOTH_API_TOKEN), or with "params 5" to print the params BuildParams makes
@@ -18,8 +18,9 @@
   <ItemGroup>
     <Compile Include="..\..\mod\Lockdown.cs" Link="Lockdown.cs" />
     <Compile Include="..\..\mod\LockdownRun.cs" Link="LockdownRun.cs" />
+    <Compile Include="..\..\mod\ForceField.cs" Link="ForceField.cs" />
     <Compile Include="..\..\mod\Atlas.cs" Link="Atlas.cs" />
-    <EmbeddedResource Include="..\..\recorded\lockdown_*.json;..\..\mod\lockdown_districts.json" LogicalName="recorded.%(Filename)%(Extension)" />
+    <EmbeddedResource Include="..\..\recorded\lockdown_*.json;..\..\recorded\entanglement_lut.bin;..\..\mod\lockdown_districts.json" LogicalName="recorded.%(Filename)%(Extension)" />
   </ItemGroup>
 
 </Project>
