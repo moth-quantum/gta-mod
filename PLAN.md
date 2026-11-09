@@ -117,6 +117,8 @@ Natives confirmed against alloc8or's native DB on 21 Oct:
 
 Build and deploy: `dotnet build` on the Mac (net48 target, `ScriptHookVDotNet3` 3.6.0 and `LemonUI.SHVDN3` from NuGet), copy `QDay.dll` into `GTAV/scripts/`, press Insert in-game to reload SHVDN. Log at `GTAV/ScriptHookVDotNet.log` plus the mod's own `scripts/QDay.log`.
 
+Force field natives, confirmed against the same DB on 8 Nov (behaviour still to check in game, see docs/forcefield-test.md): DRAW_POLY 0xAC26716048436851, GET_FINAL_RENDERED_CAM_COORD 0xA200EB1EE790F448, SET_ENTITY_VELOCITY 0x1C99BB7B6E96D16F, SET_ENTITY_COORDS_NO_OFFSET 0x239A3351AC1DA385, SET_PED_TO_RAGDOLL 0xAE99FB955581844A, START_PARTICLE_FX_LOOPED_AT_COORD 0xE184F4F0DC5910E7, SET_PARTICLE_FX_LOOPED_COLOUR 0x7F8F65877F88783B, ADD_BLIP_FOR_COORD 0x5A039BB0BCA604B6.
+
 ### Atlas is the machine (required, measured 21 Oct)
 
 The quantum computer CJ builds is not a prop. Every build step is a real Atlas job, and the numbers on the HUD are the numbers Atlas returns. Measured today on the emulator: graph-v1 and comet-qrng-v1 both return in about 10 seconds, 5 credits each. Hardware queue time: being measured now.
