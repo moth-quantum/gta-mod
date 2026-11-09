@@ -30,8 +30,8 @@ The file splits the escape area into districts, and each district becomes one qu
 | `links` | One entry for each pair of districts with at least one road crossing the border between them. |
 | `links[].a`, `links[].b` | The two district ids. The order doesn't matter, and a pair can't be listed twice. |
 | `links[].walls` | Every site where a force field goes if this border is sealed, so one per road crossing. |
-| `walls[].pos` | World position as x, y, z, mostly at junctions, with z at road level. The force field on `feature/forcefield` stands on z and only pushes between 2 m below it and 6 m above, so a road on another level isn't blocked. |
-| `walls[].heading` | Degrees. The current assumption is the direction the road runs at the wall, in GTA's convention (0 is +Y, turning counter-clockwise), with the wall square to it. Nothing on this branch reads it yet, and the force field on `feature/forcefield` does. Please confirm it (see below). |
+| `walls[].pos` | World position as x, y, z, mostly at junctions, with z at road level. The force field stands on z and only pushes between 2 m below it and 6 m above, so a road on another level isn't blocked. |
+| `walls[].heading` | Degrees. The current assumption is the direction the road runs at the wall, in GTA's convention (0 is +Y, turning counter-clockwise), with the wall square to it. The force field reads it in `ForceField.Segment`. Please confirm it (see below). |
 | `walls[].width` | Width to block in metres, centred on `pos`. The debug marker uses it too, and it defaults to 12 if left out. |
 | `start` | The district the escape starts in. |
 | `stops` | The districts the player has to reach, with the last one as the final destination. The start and all the stops are held open to each other on every run. |
@@ -51,7 +51,7 @@ The recorded jobs in `recorded/lockdown_NN.json` are tied to this file's links, 
 
 ## Questions for Alejandro
 
-1. **Can you confirm what `heading` means?** The current assumption is the direction the road runs at the wall, which is the way a car is travelling as it crosses, in GTA's heading convention. If your road data suits another meaning, it's a change to one function on `feature/forcefield`. The placeholder's headings are rough, so don't rely on them.
+1. **Can you confirm what `heading` means?** The current assumption is the direction the road runs at the wall, which is the way a car is travelling as it crosses, in GTA's heading convention. If your road data suits another meaning, it's a change to that one function. The placeholder's headings follow the line between the two district centres, standing in for the road, so don't rely on them.
 2. **Is one position per wall enough for the force field,** given the width, or do you need two end points?
 3. **Do you need anything else per wall or per link,** such as a road node id?
 4. **Should wall widths cover the pavement as well as the road?** A wall that only spans the carriageway can be driven round, so I'd lean towards covering both, but your road data may make it clearer how wide each crossing needs to be.
