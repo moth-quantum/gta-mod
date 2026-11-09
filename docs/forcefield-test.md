@@ -55,7 +55,23 @@ Build `mod/`, copy `bin/QDay.dll` to `scripts\`, set `Debug = true` in `QDay.ini
 
 25. **Escape:** press F7 then F6 to reach the escape. The log shows `forcefield: N walls up`, where N is the sealed walls in the layout, and sealed sites get walls and blips. With the placeholder data, they'll be in odd places.
 26. **Debug view:** the blue columns only appear with `Debug = true`. With `Debug = false`, there are no columns but the force field is still there, and F4 does nothing.
-27. **GPS:** the game's route to the objective doesn't know about the walls, so it can lead into one. I'd expect this, but please say how it plays.
+27. **GPS:** the game's route to the objective doesn't know about the walls, so it can lead into one. I'd expect this, but please say how it plays, and also what AI traffic does at a wall, since the walls only affect the player. Section G is a possible fix for both.
+
+## G. Switching off the road under a wall (not built yet)
+
+These checks are for later and can't be run on this branch. The idea is to switch off the road nodes under each sealed wall with `SET_ROADS_IN_ANGLED_AREA`, so the GPS routes round it and AI traffic avoids it, and to undo that with `SET_ROADS_BACK_TO_ORIGINAL_IN_ANGLED_AREA`. The native DB confirms both exist, but it leaves the flags that control them undocumented. A FiveM forum thread reports the plainer `SET_ROADS_IN_AREA` clearing traffic from a bridge, and I found nothing either way on the GPS, so these checks are what would show whether it works.
+
+28. **The flags:** the log should show `GET_VEHICLE_NODE_IS_SWITCHED_OFF` going from false to true for the node under the wall, and back to false afterwards. This is what settles which of the three flags does what. The DB also describes that native as true on alleys and car parks, so only a change on the same node counts.
+29. **Finding the nodes:** road nodes are spaced well apart, so a thin area across the road can miss them all. Note how long the area has to be along the road before a node switches off.
+30. **Neighbouring roads:** the wall sites are mostly at junctions, so check that the roads crossing at the junction still work, and that switching off this road doesn't take them out too.
+31. **GPS:** with a route that runs through the wall, the route should move round it, comparing `GET_GPS_BLIP_ROUTE_LENGTH` before and after. Test nodes switched off before the route is set, and also after it's set, as the route may not refresh by itself. `BeginEscape` currently sets the route first, so the order may need to change.
+32. **Destination still reachable:** with all the walls for a layout up, `GET_GPS_BLIP_ROUTE_FOUND` stays true and the route still reaches the last stop. Switched-off nodes could split the road network differently from the districts that the route guarantee works from.
+33. **AI traffic:** new cars stop appearing on the road and avoid it from further away. Note what happens to cars already there as the wall goes up, and whether they pile up or block the player's open route.
+34. **Police and hostile drivers:** chasing cars should route round it or stop, rather than getting stuck at the wall, as the force field only pushes the player.
+35. **Far-away walls:** try a wall with its road nodes not loaded yet, more than a few hundred metres away, then drive there. The change has to hold when the nodes load.
+36. **Many walls:** switch off every wall in the worst layout, as the game may limit how many areas it can hold, and check that all of them take effect.
+37. **Undoing it:** after F10, dying, mission end and F11, the same nodes read as on again, and traffic and the GPS use the road. The native DB doesn't say whether this resets by itself when a script ends, so I'm assuming it doesn't and that every way out has to undo it. Also check that a mission started after each of those starts clean.
+38. **Crash or game closed mid-mission:** after restarting the game and loading a save, the road should be back to normal. A script can't clean up after a crash, so this is the one case that relies on the game.
 
 ## Reporting back
 
