@@ -26,7 +26,9 @@ static class Program
     {
         if (args.Length >= 2 && args[0] == "params")
         {
-            Console.WriteLine(Lockdown.BuildParams(LoadPlaceholder(), SyntheticInts(int.Parse(args[1]))).ToJsonString());
+            // params <seed> [district file]: the embedded mod/lockdown_districts.json unless a file is given
+            var districts = args.Length >= 3 ? DistrictGraph.Parse(File.ReadAllText(args[2])) : LoadPlaceholder();
+            Console.WriteLine(Lockdown.BuildParams(districts, SyntheticInts(int.Parse(args[1]))).ToJsonString());
             return 0;
         }
 
@@ -280,7 +282,7 @@ static class Program
         Check(Lockdown.Choose(g, null).Rank == 0, "null measurements still give a layout");
         Check(Lockdown.Choose(g, [new Measurement { Bitstring = new string('x', g.Count), Count = 9 }]).Rank == 0, "non-binary bitstrings are ignored");
         var order = new[] { new Measurement { Bitstring = new string('0', g.Count), Count = 5 }, new Measurement { Bitstring = new string('1', g.Count), Count = 5 } };
-        Check(Lockdown.Choose(g, order).Bitstring == Lockdown.Choose(g, order.Reverse().ToList()).Bitstring, "tied counts do not depend on input order");
+        Check(Lockdown.Choose(g, order).Bitstring == Lockdown.Choose(g, Enumerable.Reverse(order).ToList()).Bitstring, "tied counts do not depend on input order");
         Console.WriteLine($"10000 synthetic sets: {repaired} repaired, {empty} with nothing usable, {thin} below the seal floor");
     }
 

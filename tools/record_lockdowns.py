@@ -7,8 +7,10 @@ tests/LockdownCheck, so the bank cannot drift from what the game sends. Their ta
 by Q-Day numbers, so the game labels them "recorded bank" and never as hardware.
 
 Rerun whenever mod/lockdown_districts.json changes; tests/LockdownCheck fails until you do.
+--districts records a bank for another district file; give it its own --out so the game's bank in
+recorded/ is left alone (only recorded/lockdown_*.json is embedded).
 
-  MOTH_API_TOKEN=... tools/record_lockdowns.py [--jobs 20]
+  MOTH_API_TOKEN=... tools/record_lockdowns.py [--jobs 20] [--districts FILE --out DIR]
 """
 import argparse
 import json
@@ -28,15 +30,22 @@ def dotnet():
     return shutil.which("dotnet") or str(Path.home() / ".dotnet" / "dotnet")
 
 
-def build_params(exe, seed):
-    return json.loads(subprocess.run([*exe, "params", str(seed)], check=True, capture_output=True, text=True).stdout)
+def build_params(exe, seed, extra=()):
+    return json.loads(subprocess.run([*exe, "params", str(seed), *extra], check=True, capture_output=True, text=True).stdout)
 
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--jobs", type=int, default=20)
     ap.add_argument("--workers", type=int, default=4)
+    ap.add_argument("--districts", type=Path, help="district file (default: the one embedded in LockdownCheck, mod/lockdown_districts.json)")
+    ap.add_argument("--out", type=Path, default=REPO / "recorded", help="folder for lockdown_NN.json (default: recorded/)")
     a = ap.parse_args()
+    out = a.out.resolve()
+    if a.districts is not None and out == (REPO / "recorded").resolve():
+        raise SystemExit("--districts writes over the game's bank in recorded/; pass --out too")
+    out.mkdir(parents=True, exist_ok=True)
+    extra = [str(a.districts.resolve())] if a.districts is not None else []
 
     project = REPO / "tests" / "LockdownCheck" / "LockdownCheck.csproj"
     # Built once up front; the jobs below then run the same binary.
@@ -46,11 +55,11 @@ def main():
     def one(i):
         time.sleep(i * 3)  # the platform 503s on bursts
         seed = 100 + i
-        params = build_params(exe, seed)
+        params = build_params(exe, seed, extra)
         if params["mode"] != "emu":
             raise SystemExit(f"the bank is emu only, BuildParams says {params['mode']}")
         output, job_id, secs = run_job(params)
-        path = REPO / "recorded" / f"lockdown_{i:02d}.json"
+        path = out / f"lockdown_{i:02d}.json"
         path.write_text(json.dumps({"job_id": job_id, "targets_seed": seed, "params": params, "result": {"output": output}}, indent=1) + "\n")
         print(f"{path.name} job={job_id} {secs:.0f}s", flush=True)
 
