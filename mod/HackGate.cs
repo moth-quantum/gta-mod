@@ -12,8 +12,7 @@ namespace QDay;
 
 public sealed class HackGate
 {
-    const string TerminalModel = "prop_elecbox_02a";   // an electrical box, big enough to spot; needs checking in game
-    const string FallbackModel = "prop_laptop_01a";
+    const string TerminalModel = "prop_laptop_01a";
     const float UseRadius = 1.5f;                       // metres, measured flat, from the terminal
     const float UseHeight = 2f;                         // and no more than this above or below it
     const string Objective = "Hack the ~y~terminal~s~ to release the truck.";
@@ -45,10 +44,8 @@ public sealed class HackGate
         float z = World.GetGroundHeight(chip.HackPos + new Vector3(0f, 0f, 2f));
         ground = z > 0f ? new Vector3(chip.HackPos.X, chip.HackPos.Y, z) : chip.HackPos;
 
-        Model model = new(TerminalModel);
-        if (!model.IsInCdImage) model = new(FallbackModel);
-        terminal = World.CreateProp(model, ground, new Vector3(0f, 0f, chip.HackHeading), false, true);
-        if (terminal == null) Log.Write($"hack terminal: could not create {model.Hash:X}, marker and blip only");
+        terminal = World.CreateProp(new(TerminalModel), ground, new Vector3(0f, 0f, chip.HackHeading), false, false);
+        if (terminal == null) Log.Write($"hack terminal: could not create {TerminalModel}, marker and blip only");
 
         blip = World.CreateBlip(ground);
         blip.Sprite = BlipSprite.Standard;

@@ -473,6 +473,7 @@ public class QDayScript : Script
                 case ChipMilitary: // Military
                                    // Locked until the hack at the terminal is solved (HackGate.cs)
                     heistCanReachTruck = hackGate.Tick();
+                    truck.LockStatus = heistCanReachTruck ? VehicleLockStatus.Unlocked : VehicleLockStatus.CannotEnter;
                     break;
             }
 
