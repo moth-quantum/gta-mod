@@ -1,5 +1,5 @@
-// The Q-Day title, the parts with no game calls: the timeline, the Atlas Type grid font and the layout.
-// tests/QDayTitle.Tests runs this file without the game. mod/QDayTitle.cs draws it.
+// The animated titles (Q-Day and the ending), the parts with no game calls: the timeline, the Atlas Type grid
+// font and the layout. tests/QDayTitle.Tests runs this file without the game. mod/QDayTitle.cs draws them.
 
 using System;
 using System.Collections.Generic;
@@ -8,9 +8,19 @@ using System.Text.Json.Nodes;
 
 namespace QDay;
 
+/// <summary>When a title's hold ends and when its fade finishes. The flicker and slowdown are the same for every title.</summary>
+public readonly struct TitleTiming(int holdEndMs, int endMs)
+{
+    public readonly int HoldEndMs = holdEndMs, EndMs = endMs;
+
+    public static readonly TitleTiming QDay = new(QDayTitleTimeline.HoldEndMs, QDayTitleTimeline.EndMs);   // 1.5 s hold, 0.5 s fade
+    public static readonly TitleTiming Ending = new(7000, 7500);                                            // 4.0 s hold, 0.5 s fade
+}
+
 /// <summary>
-/// Elapsed milliseconds to what the title shows. 0 to 2 s: a new seed 20 times a second. 2 to 3 s: easing
-/// out to about 3 a second. At 3 s it lands on the chosen seed and holds it until 4.5 s, then fades by 5 s.
+/// Elapsed milliseconds to what a title shows. 0 to 2 s: a new seed 20 times a second. 2 to 3 s: easing
+/// out to about 3 a second. At 3 s it lands on the chosen seed and holds it, then fades. The Q-Day title
+/// holds until 4.5 s and fades by 5 s, which is what the overloads without a timing use.
 /// </summary>
 public static class QDayTitleTimeline
 {
@@ -36,17 +46,23 @@ public static class QDayTitleTimeline
         Landed(ms) ? landingIndex : Wrap(startIndex + Changes(ms), count);
 
     /// <summary>1 until the hold ends, then down to 0 at the end. Applies to the title, the backdrop and the line under it.</summary>
-    public static double Alpha(int ms)
+    public static double Alpha(int ms) => Alpha(ms, TitleTiming.QDay);
+
+    public static double Alpha(int ms, TitleTiming timing)
     {
-        if (ms < HoldEndMs) return 1;
-        if (ms >= EndMs) return 0;
-        return 1 - (ms - HoldEndMs) / (double)(EndMs - HoldEndMs);
+        if (ms < timing.HoldEndMs) return 1;
+        if (ms >= timing.EndMs) return 0;
+        return 1 - (ms - timing.HoldEndMs) / (double)(timing.EndMs - timing.HoldEndMs);
     }
 
     /// <summary>The line under the title shows during the hold and the fade only.</summary>
-    public static bool ShowsLine(int ms) => ms >= SlowEndMs && ms < EndMs;
+    public static bool ShowsLine(int ms) => ShowsLine(ms, TitleTiming.QDay);
 
-    public static bool Finished(int ms) => ms >= EndMs;
+    public static bool ShowsLine(int ms, TitleTiming timing) => ms >= SlowEndMs && ms < timing.EndMs;
+
+    public static bool Finished(int ms) => Finished(ms, TitleTiming.QDay);
+
+    public static bool Finished(int ms, TitleTiming timing) => ms >= timing.EndMs;
 
     /// <summary>The landing seed from one of the Q-Day random numbers.</summary>
     public static int LandingIndex(int value, int count) => Wrap(value, count);

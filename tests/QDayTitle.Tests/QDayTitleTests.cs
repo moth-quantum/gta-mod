@@ -156,3 +156,77 @@ public class FontTests
         Assert.Contains(strokes, s => s.Horizontal && Math.Abs(s.CY - baseline) < 1e-9);
     }
 }
+
+public class EndingTitleTests
+{
+    static readonly TitleTiming Ending = TitleTiming.Ending;
+    static readonly GridFont Font = GridFont.Parse(File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "ending_title_gridfont.json")));
+
+    [Fact]
+    public void The_ending_holds_for_four_seconds_and_fades_by_seven_and_a_half()
+    {
+        Assert.Equal(4000, Ending.EndMs - 500 - QDayTitleTimeline.SlowEndMs);   // 3.0 to 7.0 s
+        Assert.Equal(500, Ending.EndMs - Ending.HoldEndMs);
+        foreach (int ms in new[] { 0, 3000, 5000, 6999 }) Assert.Equal(1, QDayTitleTimeline.Alpha(ms, Ending));
+        Assert.Equal(0.5, QDayTitleTimeline.Alpha(7250, Ending), 6);
+        Assert.Equal(0, QDayTitleTimeline.Alpha(7500, Ending));
+        Assert.False(QDayTitleTimeline.Finished(7499, Ending));
+        Assert.True(QDayTitleTimeline.Finished(7500, Ending));
+    }
+
+    [Fact]
+    public void The_landing_seed_shows_from_three_to_seven_seconds()
+    {
+        const int start = 3, landing = 64, count = 120;
+        Assert.NotEqual(landing, QDayTitleTimeline.SeedIndex(2999, start, landing, count));
+        foreach (int ms in new[] { 3000, 4500, 5000, 6999, 7000 })
+            Assert.Equal(landing, QDayTitleTimeline.SeedIndex(ms, start, landing, count));
+        Assert.True(QDayTitleTimeline.ShowsLine(3000, Ending));
+        Assert.True(QDayTitleTimeline.ShowsLine(7499, Ending));
+        Assert.False(QDayTitleTimeline.ShowsLine(2999, Ending));
+        Assert.False(QDayTitleTimeline.ShowsLine(7500, Ending));
+    }
+
+    [Fact]
+    public void The_flicker_is_the_same_as_the_qday_title()
+    {
+        Assert.Equal(40, QDayTitleTimeline.Changes(2000));
+        Assert.Equal(QDayTitleTimeline.Alpha(4000), QDayTitleTimeline.Alpha(4000, Ending));
+        Assert.Equal(QDayTitleTimeline.EndMs, TitleTiming.QDay.EndMs);
+        Assert.Equal(QDayTitleTimeline.HoldEndMs, TitleTiming.QDay.HoldEndMs);
+    }
+
+    [Fact]
+    public void The_ending_export_reads_with_three_words_and_two_spaces()
+    {
+        Assert.Equal("you survived qday", Font.Text);
+        Assert.Equal(120, Font.SeedCount);
+        Assert.Equal(Enumerable.Range(6584, 120), Font.SeedNumbers);
+        int[] spaces = Enumerable.Range(0, Font.Text.Length).Where(i => Font.Text[i] == ' ').ToArray();
+        Assert.Equal(new[] { 3, 12 }, spaces);
+        Assert.All(Font.Glyphs, g => Assert.All(spaces, i => Assert.Empty(g[i])));
+        Assert.All(Font.Glyphs, g => Assert.All(Enumerable.Range(0, g.Length).Where(i => !spaces.Contains(i)), i => Assert.NotEmpty(g[i])));
+    }
+
+    [Fact]
+    public void Three_words_are_spaced_and_centred()
+    {
+        var starts = TitleLayout.Starts(Font.Text, 2, out int width);
+        Assert.Equal(new[] { 0, 3, 6 }, starts.Take(3));           // "you"
+        Assert.Equal(11, starts[4]);                               // 'u' ends at 8, then three cells
+        Assert.Equal(11 + 7 * 3, starts[11]);                      // the 'd' of "survived", which ends at 34
+        Assert.Equal(new[] { 37, 40, 43, 46 }, starts.Skip(13));   // "qday", three cells after
+        Assert.Equal(15 * 2 + 12 + 2 * 3, width);                  // 15 letters, 12 letter gaps, 2 word spaces
+        foreach (double aspect in new[] { 16.0 / 9, 4.0 / 3, 21.0 / 9 })
+        {
+            double cell = TitleLayout.Cell(Font, aspect);
+            Assert.Equal(0.70, width * cell / aspect, 9);
+            var strokes = TitleLayout.Strokes(Font, 0, aspect);
+            double left = strokes.Min(s => s.CX - s.Length / 2), right = strokes.Max(s => s.CX + s.Length / 2);
+            Assert.InRange(left, (aspect - width * cell) / 2 - cell, aspect / 2);
+            Assert.InRange(right, aspect / 2, (aspect + width * cell) / 2 + cell);
+            var (top, bottom) = TitleLayout.Box(Font, aspect);
+            Assert.Equal(TitleLayout.CentreY, (top + bottom) / 2, 9);
+        }
+    }
+}

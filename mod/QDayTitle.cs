@@ -1,12 +1,15 @@
-// The Q-Day title: "qday activated" in Atlas Type's grid font, flickering through the export's seeds and
-// landing on the one the IBM run's random numbers chose. Timeline, font and layout are in QDayTitleTimeline.cs.
-// Calls natives, so script thread only. It's an overlay: the player keeps control throughout.
+// The animated titles in Atlas Type's grid font: "qday activated" when Q-Day starts and "you survived qday"
+// at the ending. Each flickers through its export's seeds and lands on the one picked by the IBM run's random
+// numbers. Both share this drawing, the timeline in QDayTitleTimeline.cs and the clean-up; what differs is
+// the file, the hold length, the backdrop and the line under the title. Calls natives, so script thread
+// only. It's an overlay: the player keeps control throughout.
 //
 // Horizontal and vertical strokes are DRAW_RECT. I couldn't confirm a plain white texture in the game files,
 // so diagonals default to small DRAW_RECT squares stepped along the stroke, which needs no texture. Setting
 // DiagonalsAsSprites draws them as one rotated sprite each instead, with the texture checked when it loads.
 
 using System;
+using System.Collections.Generic;
 using System.Drawing;
 using System.IO;
 using GTA;
@@ -14,6 +17,7 @@ using GTA.Math;
 using GTA.Native;
 using GTA.UI;
 using Font = GTA.UI.Font;
+using Screen = GTA.UI.Screen;
 
 namespace QDay;
 
@@ -21,75 +25,109 @@ public static class QDayTitle
 {
     static readonly bool DiagonalsAsSprites = false;    // see the note at the top; compare in game
     const string SpriteDict = "commonmenu", SpriteName = "gradient_nav";   // candidate only, unconfirmed as plain white
-    const int BackdropAlpha = 140;                       // about 55%
     const float LineScale = 0.42f;
     const float LineGap = 18f;                           // canvas pixels under the glyph box
     const double StampSpacing = 0.5;                     // of a stamp's side, along a diagonal
     const string StingSound = "TextHit", StingSet = "WastedSounds";   // listed in the game's sound names; check in game
+    const int GfxOrderAfterFade = 7, GfxOrderAfterHud = 4;            // eGfxDrawOrder, for SET_SCRIPT_GFX_DRAW_ORDER
 
-    static GridFont font;
-    static bool loadTried;
+    /// <summary>What makes one title different from another.</summary>
+    sealed class Title(string name, string resource, string fallbackCard, TitleTiming timing, int backdropAlpha, bool overFade)
+    {
+        public readonly string Name = name;                  // log prefix
+        public readonly string Resource = resource;          // embedded export
+        public readonly string FallbackCard = fallbackCard;  // what shows if the font won't load
+        public readonly TitleTiming Timing = timing;
+        public readonly int BackdropAlpha = backdropAlpha;
+        public readonly bool OverFade = overFade;            // drawn after the screen fade, for a title over a faded-out screen
+    }
+
+    static readonly Title QDayTitleSpec = new("qday title", "recorded.qday_title_gridfont.json", "the Q-DAY card", TitleTiming.QDay, 140, false);   // about 55%
+    static readonly Title EndingTitleSpec = new("ending title", "recorded.ending_title_gridfont.json", "the YOU SURVIVED QDAY card", TitleTiming.Ending, 255, true);
+
+    static readonly Dictionary<string, GridFont> fonts = [];
+    static readonly HashSet<string> refused = [];
     static readonly Random rng = new();
+    static Title title;
+    static GridFont font;
+    static string line;
     static int startIndex, landingIndex, startedAt;
-    static double bellS;
     static bool landed, spriteChecked, spriteOk;
     static int? stingId;
 
     public static bool IsActive { get; private set; }
 
     /// <summary>
-    /// Starts the title. atlasValue is the first of the Q-Day random numbers, or null if the result had none.
+    /// Starts the Q-Day title. atlasValue is the first of the Q-Day random numbers, or null if the result had none.
     /// False, with the reason logged, if the font couldn't be loaded, so the caller's Q-DAY card shows instead.
     /// </summary>
-    public static bool Start(int? atlasValue, double s)
+    public static bool Start(int? atlasValue, double s) =>
+        Start(QDayTitleSpec, atlasValue, double.IsNaN(s) ? "every key on earth is public" : $"every key on earth is public    Bell S = {s:0.00} > 2");
+
+    /// <summary>
+    /// Starts the ending title over the faded-out screen, with the credit under it. atlasValue is the next draw
+    /// from the riot's Atlas numbers, or null if there were none. False, logged, if the font couldn't be loaded.
+    /// </summary>
+    public static bool StartEnding(int? atlasValue, string credit) => Start(EndingTitleSpec, atlasValue, credit);
+
+    static bool Start(Title t, int? atlasValue, string underLine)
     {
         Stop();
-        if (!LoadFont()) return false;
+        if (!LoadFont(t)) return false;
+        title = t;
+        font = fonts[t.Resource];
+        line = underLine;
         int count = font.SeedCount;
         startIndex = rng.Next(count);
         if (atlasValue.HasValue) landingIndex = QDayTitleTimeline.LandingIndex(atlasValue.Value, count);
         else
         {
             landingIndex = rng.Next(count);
-            Log.Write("qday title: the Q-Day result has no random numbers, landing chosen by System.Random");
+            Log.Write($"{t.Name}: the Q-Day result has no random numbers, landing chosen by System.Random");
         }
-        bellS = s;
         landed = false;
         startedAt = Game.GameTime;
         IsActive = true;
         if (DiagonalsAsSprites) Function.Call(Hash.REQUEST_STREAMED_TEXTURE_DICT, SpriteDict, false);
-        Log.Write($"qday title: start index {startIndex}, landing index {landingIndex}, landing seed {font.SeedNumbers[landingIndex]}{(atlasValue.HasValue ? $" from Q-Day number {atlasValue.Value}" : "")}");
+        Log.Write($"{t.Name}: start index {startIndex}, landing index {landingIndex}, landing seed {font.SeedNumbers[landingIndex]}{(atlasValue.HasValue ? $" from Q-Day number {atlasValue.Value}" : "")}");
         return true;
     }
 
-    /// <summary>Stops drawing and releases what it holds. Safe to call at any time.</summary>
-    public static void Stop()
+    /// <summary>
+    /// Stops drawing and releases what it holds. Safe to call at any time. Cut short over a faded-out screen, it
+    /// fades the screen back in, so an abort or a reload mid-ending doesn't leave the player in the dark.
+    /// </summary>
+    public static void Stop() => End(cutShort: true);
+
+    static void End(bool cutShort)
     {
         if (stingId.HasValue) Audio.ReleaseSound(stingId.Value);
         stingId = null;
         if (!IsActive) return;
         IsActive = false;
         if (DiagonalsAsSprites) Function.Call(Hash.SET_STREAMED_TEXTURE_DICT_AS_NO_LONGER_NEEDED, SpriteDict);
-        Log.Write("qday title: stopped");
+        if (cutShort && title.OverFade && (Screen.IsFadedOut || Screen.IsFadingOut)) Screen.FadeIn(500);
+        Log.Write($"{title.Name}: {(cutShort ? "stopped" : "finished")}");
     }
 
-    static bool LoadFont()
+    static bool LoadFont(Title t)
     {
-        if (font != null) return true;
-        if (loadTried) return false;   // refused once already, and logged then
-        loadTried = true;
+        if (fonts.ContainsKey(t.Resource)) return true;
+        if (refused.Contains(t.Resource)) return false;   // refused once already, and logged then
         try
         {
-            using var s = typeof(QDayTitle).Assembly.GetManifestResourceStream("recorded.qday_title_gridfont.json")
-                          ?? throw new FileNotFoundException("no embedded qday_title_gridfont.json");
+            using var s = typeof(QDayTitle).Assembly.GetManifestResourceStream(t.Resource)
+                          ?? throw new FileNotFoundException($"no embedded {t.Resource.Substring("recorded.".Length)}");
             using StreamReader r = new(s);
-            font = GridFont.Parse(r.ReadToEnd());
-            Log.Write($"qday title: font loaded, \"{font.Text}\", {font.SeedCount} seeds {font.SeedNumbers[0]} to {font.SeedNumbers[font.SeedCount - 1]}");
+            var f = GridFont.Parse(r.ReadToEnd());
+            fonts[t.Resource] = f;
+            Log.Write($"{t.Name}: font loaded, \"{f.Text}\", {f.SeedCount} seeds {f.SeedNumbers[0]} to {f.SeedNumbers[f.SeedCount - 1]}");
             return true;
         }
         catch (Exception e)
         {
-            Log.Write($"qday title: font refused, using the Q-DAY card instead: {e.Message}");
+            refused.Add(t.Resource);
+            Log.Write($"{t.Name}: font refused, using {t.FallbackCard} instead: {e.Message}");
             return false;
         }
     }
@@ -106,21 +144,22 @@ public static class QDayTitle
         }
 
         int ms = Game.GameTime - startedAt;
-        if (QDayTitleTimeline.Finished(ms))
+        if (QDayTitleTimeline.Finished(ms, title.Timing))
         {
-            Stop();
+            End(cutShort: false);
             return;
         }
         if (!landed && QDayTitleTimeline.Landed(ms))
         {
             landed = true;
             stingId = Audio.PlaySoundFrontend(StingSound, StingSet);
-            Log.Write($"qday title: landed on seed {font.SeedNumbers[landingIndex]}");
+            Log.Write($"{title.Name}: landed on seed {font.SeedNumbers[landingIndex]}");
         }
 
-        double alpha = QDayTitleTimeline.Alpha(ms);
+        if (title.OverFade) Function.Call(Hash.SET_SCRIPT_GFX_DRAW_ORDER, GfxOrderAfterFade);
+        double alpha = QDayTitleTimeline.Alpha(ms, title.Timing);
         int a = (int)Math.Round(255 * alpha);
-        Function.Call(Hash.DRAW_RECT, 0.5f, 0.5f, 1f, 1f, 0, 0, 0, (int)Math.Round(BackdropAlpha * alpha), false);
+        Function.Call(Hash.DRAW_RECT, 0.5f, 0.5f, 1f, 1f, 0, 0, 0, (int)Math.Round(title.BackdropAlpha * alpha), false);
 
         double aspect = Function.Call<float>(Hash.GET_ASPECT_RATIO, false);
         if (aspect < 0.5 || aspect > 5) aspect = 16.0 / 9;   // a bad reading shouldn't throw the layout off screen
@@ -135,12 +174,12 @@ public static class QDayTitle
             else Stamp(st, aspect, a);
         }
 
-        if (QDayTitleTimeline.ShowsLine(ms))
+        if (QDayTitleTimeline.ShowsLine(ms, title.Timing))
         {
             var bottom = TitleLayout.Box(font, aspect).bottom;
-            string line = double.IsNaN(bellS) ? "every key on earth is public" : $"every key on earth is public    Bell S = {bellS:0.00} > 2";
             new TextElement(line, new PointF(640f, (float)(bottom * 720) + LineGap), LineScale, Color.FromArgb(a, 255, 255, 255), Font.ChaletLondon, Alignment.Center).Draw();
         }
+        if (title.OverFade) Function.Call(Hash.SET_SCRIPT_GFX_DRAW_ORDER, GfxOrderAfterHud);
     }
 
     static void Rect(double cx, double cy, double w, double h, double aspect, int a) =>
@@ -168,7 +207,7 @@ public static class QDayTitle
             spriteChecked = true;
             var size = Function.Call<Vector3>(Hash.GET_TEXTURE_RESOLUTION, SpriteDict, SpriteName);
             spriteOk = size.X > 0 && size.Y > 0;
-            Log.Write($"qday title: sprite {SpriteDict}/{SpriteName} {(spriteOk ? $"is {size.X} x {size.Y}" : "not found, using stamps")}");
+            Log.Write($"{title.Name}: sprite {SpriteDict}/{SpriteName} {(spriteOk ? $"is {size.X} x {size.Y}" : "not found, using stamps")}");
         }
         return spriteOk;
     }

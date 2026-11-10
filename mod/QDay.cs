@@ -864,21 +864,33 @@ public partial class QDayScript : Script
     }
 
     // ---- Ending: fade out, credit the hardware, back to Idle -------------------------
+    bool endingTitleTried, endingTitleShown, endingCardShown;
+    const double EndingFallbackSeconds = 12;   // how long the fallback card stays before Idle, as before the title
+
     void BeginEnding()
     {
         Screen.FadeOut(3000);
         Log.Write("ending");
+        endingTitleTried = endingTitleShown = endingCardShown = false;
     }
 
     void TickEnding()
     {
-        if (Elapsed() > 3.5 && Elapsed() < 4)
+        // Once the screen is black: "you survived qday", landing on the next of the riot's Atlas numbers, with the credit under it.
+        if (!endingTitleTried && Elapsed() > 3 && (Screen.IsFadedOut || Elapsed() > 4))
+        {
+            endingTitleTried = true;
+            var credit = lastResult;
+            endingTitleShown = QDayTitle.StartEnding(rng is AtlasRandom ? rng.Next() : null, $"Random numbers generated on {credit?.Backend ?? "IBM hardware"} via Moth Atlas. Job {credit?.JobId}.");
+        }
+        if (endingTitleTried && !endingTitleShown && !endingCardShown)   // the fallback, if the ending font wouldn't load
         {
             var r = lastResult;
-            Hud.BigMessage("POST-QUANTUM CRYPTOGRAPHY", "was available the whole time");
+            endingCardShown = true; Hud.BigMessage("YOU SURVIVED QDAY", "");
             Notification.Show($"Random numbers generated on {r?.Backend ?? "IBM hardware"} via Moth Atlas. Job {r?.JobId}.");
         }
-        if (Elapsed() > 12) { Screen.FadeIn(2000); GoTo(Phase.Idle); }
+        // Back to Idle only once the title has finished, or after the fallback card has had its time.
+        if (endingTitleTried && !QDayTitle.IsActive && (endingTitleShown || Elapsed() > EndingFallbackSeconds)) { Screen.FadeIn(2000); GoTo(Phase.Idle); }
     }
 }
 

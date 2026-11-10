@@ -33,8 +33,8 @@
   <ItemGroup>
     <Reference Include="System.Windows.Forms" />
     <Reference Include="System.Net.Http" />
-    <!-- The Q-Day title's Atlas Type grid font (QDayTitle.cs), embedded like the recorded results below. -->
-    <EmbeddedResource Include="..\recorded\qday_title_gridfont.json" LogicalName="recorded.%(Filename)%(Extension)" />
+    <!-- The animated titles' Atlas Type grid fonts (QDayTitle.cs), embedded like the recorded results below. -->
+    <EmbeddedResource Include="..\recorded\qday_title_gridfont.json;..\recorded\ending_title_gridfont.json" LogicalName="recorded.%(Filename)%(Extension)" />
   </ItemGroup>
 
   <ItemGroup>
