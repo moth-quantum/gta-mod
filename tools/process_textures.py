@@ -36,8 +36,8 @@ lists any mismatch by name.
   any later run reuses it instead of sending the job again. The manifest is rewritten after every file.
 - A failed job is retried once, then skipped and listed as FAILED in the manifest. Anything from the
   API about credits, quota or rate limits stops the run straight away (exit code 3).
-- Writes <output>/manifest.csv with a row per file: texture, dictionary (blank for now), output path,
-  source, Atlas job id, engine, parameters, seconds taken.
+- Writes <output>/manifest.csv with a row per file: texture, output path, source, Atlas job id,
+  engine, parameters, seconds taken.
 
 The Atlas key is read from MOTH_API_TOKEN and never written anywhere. Pillow 11.2's BC1/BC3 encoder
 corrupts everything past the first 196,608 pixels of a level (and can crash), so older versions are
@@ -86,7 +86,7 @@ HARDWARE_KEYS = ("machine", "backend", "provider", "io")
 DDS_HEADER_BYTES = 128
 MAX_ENCODE_ERROR = 30   # mean absolute RGB error per level, out of 255; a broken encoder gives 70+
 FOURCC_BLOCK_BYTES = {b"DXT1": 8, b"DXT5": 16}
-MANIFEST_FIELDS = ["texture", "dictionary", "output_path", "source", "atlas_job_id", "engine", "parameters", "seconds"]
+MANIFEST_FIELDS = ["texture", "output_path", "source", "atlas_job_id", "engine", "parameters", "seconds"]
 QUOTA_WORDS = re.compile(r"credit|quota|rate.?limit|too many requests|insufficient|balance|billing|payment", re.I)
 
 
@@ -347,7 +347,7 @@ class Run:
         return self.raw_dir / (name[:-4] + ".png"), self.raw_dir / (name[:-4] + ".json")
 
     def row(self, name, output_path, source, job_id="", seconds=""):
-        self.rows[name] = {"texture": name, "dictionary": self.rows.get(name, {}).get("dictionary", ""),
+        self.rows[name] = {"texture": name,
                            "output_path": str(output_path) if output_path else "", "source": source,
                            "atlas_job_id": job_id, "engine": ENGINE, "parameters": self.params_text, "seconds": seconds}
 
