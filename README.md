@@ -15,6 +15,7 @@ The quantum computer is real: every error rate on screen comes from an Atlas job
 | `setup/` | How to set up a Windows PC: `WINDOWS_SETUP.md` (start here), plus the two install scripts. |
 | `log/` | Working notes from testing. `MORNING.md` is the running log of what broke and why. |
 | `tools/remote-box/` | Scripts used to drive a cloud PC from a Mac. You won't need these. |
+| `tests/` | `HackPuzzle.Tests` checks the hacking minigame's rules without the game: `dotnet test tests/HackPuzzle.Tests`. |
 | `PLAN.md` | The original plan and design notes (21 Oct). Some early details have since changed; the code is the source of truth. |
 | `CLAUDE.md` | Instructions for Claude Code when it works in this repo. |
 
@@ -22,6 +23,8 @@ The quantum computer is real: every error rate on screen comes from an Atlas job
 You need a Windows PC with GTA V Legacy. Follow `setup/WINDOWS_SETUP.md`. The two things that catch people out:
 - **BattlEye must be off** in the Rockstar launcher and Steam needs `-nobattleye`, or the game crashes on start.
 - **ScriptHookVDotNet must be 3.7.0 nightly or newer.** 3.6.0 loads but the mission fails to start.
+
+With `Debug = true`, F2 also opens the current heist's hacking minigame from anywhere.
 
 To change the mission, edit `mod/QDay.cs`, rebuild (`dotnet build` in `mod/`), and copy `mod/bin/QDay.dll` into the game's `scripts` folder.
 
