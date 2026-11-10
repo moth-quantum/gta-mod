@@ -117,6 +117,10 @@ Natives confirmed against alloc8or's native DB on 21 Oct:
 
 Build and deploy: `dotnet build` on the Mac (net48 target, `ScriptHookVDotNet3` 3.6.0 and `LemonUI.SHVDN3` from NuGet), copy `QDay.dll` into `GTAV/scripts/`, press Insert in-game to reload SHVDN. Log at `GTAV/ScriptHookVDotNet.log` plus the mod's own `scripts/QDay.log`.
 
+Force field natives, confirmed against the same DB on 8 Nov (behaviour still to check in game, see docs/forcefield-test.md): DRAW_POLY 0xAC26716048436851, GET_FINAL_RENDERED_CAM_COORD 0xA200EB1EE790F448, SET_ENTITY_VELOCITY 0x1C99BB7B6E96D16F, SET_ENTITY_COORDS_NO_OFFSET 0x239A3351AC1DA385, SET_PED_TO_RAGDOLL 0xAE99FB955581844A, START_PARTICLE_FX_LOOPED_AT_COORD 0xE184F4F0DC5910E7, SET_PARTICLE_FX_LOOPED_COLOUR 0x7F8F65877F88783B, ADD_BLIP_FOR_COORD 0x5A039BB0BCA604B6.
+
+Road switching experiment natives (Debug only, not in the mission, flags undocumented, see docs/forcefield-test.md section G): SET_ROADS_IN_ANGLED_AREA 0x1A5AA1208AF5DB59, SET_ROADS_BACK_TO_ORIGINAL_IN_ANGLED_AREA 0x0027501B9F3B407E, GET_VEHICLE_NODE_IS_SWITCHED_OFF 0x4F5070AA58F69279, GET_NTH_CLOSEST_VEHICLE_NODE_ID 0x22D7275A79FE8215, GET_VEHICLE_NODE_POSITION 0x703123E5E7D429C2 (crashes on a bad ID), GET_GPS_BLIP_ROUTE_LENGTH 0xBBB45C3CF5C8AA85, GET_GPS_BLIP_ROUTE_FOUND 0x869DAACBBE9FA006, SET_BLIP_ROUTE 0x4F7D8A9BFB0B43E9.
+
 ### Atlas is the machine (required, measured 21 Oct)
 
 The quantum computer CJ builds is not a prop. Every build step is a real Atlas job, and the numbers on the HUD are the numbers Atlas returns. Measured today on the emulator: graph-v1 and comet-qrng-v1 both return in about 10 seconds, 5 credits each. Hardware queue time: being measured now.

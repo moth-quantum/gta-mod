@@ -30,10 +30,14 @@ public class AtlasResult
     public double ErrorRate = double.NaN, S = double.NaN;
     public bool Certified;
     public List<int> Ints;
+    public List<Measurement> Measurements;   // lockdown only: graph-v1's candidate layouts
+    public bool FromBank;                    // lockdown only: a recorded job, not this run's targets
 
     public override string ToString() => Status == "error"
         ? $"{Kind} error: {Message}"
-        : $"{Kind} {Status} backend={Backend} error_rate={ErrorRate} S={S} certified={Certified} job={JobId}";
+        : Kind == "lockdown"
+            ? $"lockdown simulation {Status} backend={Backend} candidates={Measurements?.Count ?? 0} bank={FromBank} job={JobId}"
+            : $"{Kind} {Status} backend={Backend} error_rate={ErrorRate} S={S} certified={Certified} job={JobId}";
 
     public static AtlasResult Recorded() => new()
     {
@@ -86,6 +90,8 @@ public sealed class Atlas : IDisposable
         ["derive"] = new JsonObject { ["integers"] = new JsonObject { ["min"] = 0, ["max"] = 255, ["count"] = 64 } },
     };
 
+    const int LockdownTimeoutSeconds = 120;      // emu takes about 10 s; the riot is 300 s
+
     readonly HttpClient http;                    // null when offline
     readonly ConcurrentQueue<AtlasResult> inbox = new();
     readonly CancellationTokenSource cts = new();
@@ -107,6 +113,7 @@ public sealed class Atlas : IDisposable
 
     public void Calibrate(string name, string chip) => Start(name, "calibrate", () => DoCalibrate(chip));
     public void QDay(string name) => Start(name, "qday", DoQDay);
+    public void Lockdown(string name, JsonObject parameters) => Start(name, "lockdown", () => DoLockdown(parameters));
 
     /// <summary>Next finished result, or null. Call from the script thread.</summary>
     public AtlasResult Take() => inbox.TryDequeue(out var r) ? r : null;
@@ -128,7 +135,7 @@ public sealed class Atlas : IDisposable
         { IsBackground = true, Name = $"QDay Atlas {name}" }.Start();
     }
 
-    // ---- the two jobs -----------------------------------------------------------
+    // ---- the jobs ---------------------------------------------------------------
     AtlasResult DoCalibrate(string chip)
     {
         var jobId = "recorded";
@@ -163,6 +170,44 @@ public sealed class Atlas : IDisposable
         return r;
     }
 
+    AtlasResult DoLockdown(JsonObject parameters)
+    {
+        if (Offline) return RecordedLockdown();
+        var o = RunJob("graph-v1", parameters, LockdownTimeoutSeconds, out var jobId);
+        return new() { Backend = Str(o["backend"]), JobId = jobId, Measurements = ReadMeasurements(o) };
+    }
+
+    /// <summary>A random job from the recorded bank. Also the fallback when a live job fails or is late; no natives, safe on any thread.</summary>
+    public static AtlasResult RecordedLockdown()
+    {
+        const string prefix = "recorded.lockdown_";
+        var assembly = typeof(Atlas).Assembly;
+        List<string> bank = [];
+        foreach (var n in assembly.GetManifestResourceNames())
+            if (n.StartsWith(prefix, StringComparison.Ordinal) && char.IsDigit(n[prefix.Length])) bank.Add(n);   // not lockdown_districts.json
+        AtlasResult r = new() { Name = "lockdown", Kind = "lockdown", Status = "done", FromBank = true, Measurements = [] };
+        if (bank.Count == 0) { Log.Write("lockdown: the recorded bank is empty"); return r; }
+
+        var file = bank[new Random().Next(bank.Count)];
+        using var s = assembly.GetManifestResourceStream(file);
+        var root = JsonNode.Parse(s);
+        var o = root?["result"]?["output"] ?? throw new InvalidDataException($"{file}: no result.output");
+        r.Backend = Str(o["backend"]);
+        r.JobId = Str(root["job_id"]);
+        r.Measurements = ReadMeasurements(o);
+        Log.Write($"lockdown: bank file {file}");
+        return r;
+    }
+
+    static List<Measurement> ReadMeasurements(JsonNode output)
+    {
+        if (output["measurements"] is not JsonArray meas) throw new InvalidDataException("no measurements");
+        List<Measurement> list = [];
+        foreach (var m in meas)   // up to 20; fewer when the distribution is narrow
+            list.Add(new() { Bitstring = Str(m["bitstring"]), Count = (int)Num(m["count"]), Probability = Num(m["probability"]) });
+        return list;
+    }
+
     /// <summary>1 - mean ZZ over the chain's three edges, from the measured counts (not tomography, which is the ideal state).</summary>
     static double ErrorRate(JsonNode output)
     {
@@ -172,8 +217,8 @@ public sealed class Atlas : IDisposable
         for (int a = 0; a < 3; a++)
             foreach (var m in meas)
             {
-                var bits = Str(m["bitstring"]);                     // qubit 0 is the LAST character
-                int q0 = bits.Length - 1 - a;                        // (no ^index: net48 has no System.Index)
+                var bits = Str(m["bitstring"]);                     // character 0 is qubit 0 (measured, see tools/lockdown_probe.py)
+                int q0 = bits.Length - 1 - a;                        // walks the chain from its far end, which reads the same; no ^index: net48 has no System.Index
                 zz += Num(m["count"]) * (bits[q0] == bits[q0 - 1] ? 1 : -1) / total;
             }
         return 1 - zz / 3;

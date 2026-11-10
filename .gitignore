@@ -4,4 +4,6 @@ __pycache__/
 mod/obj/
 mod/*.user
 mod/bin/*
+tests/*/bin/
+tests/*/obj/
 .deploy/

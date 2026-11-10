@@ -21,7 +21,7 @@ using Font = GTA.UI.Font;
 
 namespace QDay;
 
-public enum Phase { Idle, Pitch, Heist, Delivery, Calibrating, Threshold, QDay, Ending }
+public enum Phase { Idle, Pitch, Heist, Delivery, Calibrating, Threshold, QDay, Escape, Ending }
 
 /// <summary>What a phase does on entry, every frame while active, and on exit. Missing callbacks do nothing.</summary>
 public sealed class PhaseCallbacks(Action begin = null, Action tick = null, Action end = null)
@@ -70,17 +70,20 @@ public class QDayScript : Script
     AtlasResult atlasResult;           // the result that arrived this tick, or null
     AtlasResult lastResult;            // latest Atlas result, shown on the HUD and in the ending
     AtlasResult qdayResult;            // the Q-Day job result, set before GoTo(Phase.QDay)
+    readonly LockdownRun lockdown;     // holds its own result, so lastResult and the ending credit stay on Q-Day
     Random rng = new();                // replaced by Atlas bytes on Q-Day
     readonly List<string> ticker = [];
     static readonly Locations loc = Locations.Default;
     readonly Atlas atlas;
-    readonly bool debug;               // [General] Debug in scripts\QDay.ini: enables the F5-F9 playtest keys
+    readonly bool debug;               // [General] Debug in scripts\QDay.ini: enables the F3-F9 playtest keys
+    readonly bool hideEscapeRoute;     // [General] HideEscapeRoute, only with Debug: no GPS line during the escape, the blip stays
 
     public QDayScript()
     {
         Log.Init(BaseDirectory);
         // [Atlas] ApiKey in QDay.ini; no key or Offline = true plays from the recorded results.
         atlas = new(Settings.GetValue("Atlas", "ApiKey", ""), Settings.GetValue("Atlas", "Offline", false));
+        lockdown = new(LockdownGame.LoadDistricts());
 
         phases = new()
         {
@@ -91,6 +94,7 @@ public class QDayScript : Script
             [Phase.Calibrating] = new(begin: BeginCalibrating, tick: TickCalibrating, end: EndCalibrating),
             [Phase.Threshold] = new(begin: BeginThreshold, tick: TickThreshold, end: EndThreshold),
             [Phase.QDay] = new(begin: BeginQDay, tick: TickQDay, end: EndQDay),
+            [Phase.Escape] = new(begin: BeginEscape, tick: TickEscape, end: EndEscape),
             [Phase.Ending] = new(begin: BeginEnding, tick: TickEnding),
         };
 
@@ -99,12 +103,13 @@ public class QDayScript : Script
         Aborted += OnAborted;
         Interval = 0;
         debug = Settings.GetValue("General", "Debug", false);
-        Log.Write($"Q-DAY loaded. debug={debug}");
+        hideEscapeRoute = debug && Settings.GetValue("General", "HideEscapeRoute", false);
+        Log.Write($"Q-DAY loaded. debug={debug} hideEscapeRoute={hideEscapeRoute}");
 
         string startupMsg = "~b~Q-DAY~s~ loaded.~n~  go to the ~y~Q~s~ blip to start~n~  F10 abort";
         if (debug)
         {
-            startupMsg += "~n~~y~DEBUG:~s~~n~  F5 teleport~n~  F6 skip wait~n~  F7 Q-Day now~n~  F8 Legion Square~n~  F9 start now";
+            startupMsg += "~n~~y~DEBUG:~s~~n~  F3 road test~n~  F4 test wall~n~  F5 teleport~n~  F6 skip wait~n~  F7 Q-Day now~n~  F8 Legion Square~n~  F9 start now";
         }
         Notification.Show(startupMsg);
     }
@@ -124,6 +129,7 @@ public class QDayScript : Script
     void OnTick(object sender, EventArgs e)
     {
         atlasResult = atlas.Take();
+        if (atlasResult?.Kind == "lockdown") { lockdown.Store(atlasResult); atlasResult = null; }
         if (atlasResult != null)
         {
             lastResult = atlasResult;
@@ -131,6 +137,7 @@ public class QDayScript : Script
         }
 
         phases[phase].Tick();
+        LockdownGame.TickForceField();
         if (phase != Phase.Idle) Hud.Draw(phase, chipIndex, logicalQubits, DisplayedError(), damagePenalty, Threshold, lastResult);
     }
 
@@ -148,6 +155,7 @@ public class QDayScript : Script
         Function.Call(Hash.SET_CREATE_RANDOM_COPS, true);
         Function.Call(Hash.DISPLAY_CASH, true);
         Function.Call(Hash.CLEAR_WEATHER_TYPE_PERSIST);
+        LockdownGame.ClearForceField();
         startBlip?.Delete();
         objectiveBlip?.Delete();
         truckBlip?.Delete();
@@ -172,14 +180,22 @@ public class QDayScript : Script
     {
         if (e.KeyCode == Keys.F10) { Log.Write("abort"); GoTo(Phase.Idle); }
         if (!debug) return;
-        // Playtest shortcuts, only with Debug = true in QDay.ini. F5 teleports to the current
+        // Playtest shortcuts, only with Debug = true in QDay.ini. F4 drops a force field test wall ahead, F5 teleports to the current
         // objective, F6 fakes the pending Atlas result from the recorded run, F7 jumps straight
         // to Q-Day, F8 drops you in Legion Square, F9 starts the mission from anywhere. All logged so a
         // recording that used them is obvious.
         if (e.KeyCode == Keys.F9 && phase == Phase.Idle) { Log.Write("DEBUG F9 start"); GoTo(Phase.Pitch); }
         if (e.KeyCode == Keys.F5) DebugTeleport();
-        if (e.KeyCode == Keys.F6 && phase == Phase.Calibrating) { Log.Write("DEBUG F6 recorded calibration"); FinishCalibration(chipIndex == loc.Chips.Count - 1 ? 0.0173 : 0.085); }
-        if (e.KeyCode == Keys.F6 && phase == Phase.Threshold) { Log.Write("DEBUG F6 recorded qday"); StartQDay(AtlasResult.Recorded()); }
+        if (e.KeyCode == Keys.F4) LockdownGame.DropTestWall();
+        // F3 tries the next road switching variant on the last F4 wall, Shift+F3 stops and undoes it, Ctrl+F3 reads the nodes round the player.
+        if (e.KeyCode == Keys.F3) LockdownGame.RoadTestKey(e.Shift, e.Control, objectiveBlip, phase == Phase.Escape && hideEscapeRoute);
+        // Else-ifs on the phase at the moment of the press: acting moves the phase on, so separate checks would chain one press through several phases.
+        if (e.KeyCode == Keys.F6)
+        {
+            if (phase == Phase.Calibrating) { Log.Write("DEBUG F6 in Calibrating: recorded calibration"); FinishCalibration(chipIndex == loc.Chips.Count - 1 ? 0.0173 : 0.085); }
+            else if (phase == Phase.Threshold) { Log.Write("DEBUG F6 in Threshold: recorded qday"); StartQDay(AtlasResult.Recorded()); }
+            else if (phase == Phase.QDay) { Log.Write("DEBUG F6 in QDay: skip the riot"); GoTo(Phase.Escape); }
+        }
         if (e.KeyCode == Keys.F8) { Game.Player.Character.Position = new(195.0f, -933.0f, 30.7f); Log.Write("DEBUG F8 teleport to Legion Square"); }
         if (e.KeyCode == Keys.F7)
         {
@@ -196,6 +212,7 @@ public class QDayScript : Script
         {
             Phase.Idle => loc.Start.Pos,
             Phase.Heist => loc.Chips[chipIndex].Pos,
+            Phase.Escape => LockdownGame.LastStop(lockdown.Graph),
             _ => loc.Lab.Pos,
         };
         // In Delivery, first put the player back in the truck (story missions can yank them away), then bring the truck home.
@@ -235,6 +252,7 @@ public class QDayScript : Script
         Game.Player.WantedLevel = 0;
         chipIndex = DefaultChipIndex; logicalQubits = 0; errorRate = double.NaN; damagePenalty = 0;
         lastResult = null; qdayResult = null;
+        lockdown.Reset();
         stormStarted = false; armedTotal = 0;
     }
 
@@ -636,6 +654,7 @@ public class QDayScript : Script
         stormStarted = false;
         armedTotal = 0;
         BuildTicker(r);
+        lockdown.Submit(atlas, r);
         Hud.BigMessage("Q-DAY", $"Bell S = {r.S:0.00} > 2    every key on earth is public");
         Log.Write($"Q-DAY. S={r.S} commit={r.Commit} backend={r.Backend} certified={r.Certified}");
     }
@@ -647,17 +666,27 @@ public class QDayScript : Script
     // the arming pass regularly found nobody at all.
     const float ArmRadius = 150f;
 
+    const double RiotArmSeconds = 2, EscapeArmSeconds = 4;
+
     void TickQDay()
     {
         if (CheckForPlayerDeath()) return;
 
+        TickRiotWorld(RiotArmSeconds);
+        Hud.Ticker(ticker);
+        if (Elapsed() > 300) GoTo(Phase.Escape);
+    }
+
+    /// <summary>The riot's world state, kept up through Q-Day and the escape.</summary>
+    void TickRiotWorld(double armEverySeconds)
+    {
         // Money does not exist any more.
         Game.Player.Money = 0;
         Function.Call(Hash.DISPLAY_CASH, false);
         Function.Call(Hash.HIDE_HUD_COMPONENT_THIS_FRAME, 3);
 
-        // Everyone goes mental: arm and enrage nearby peds every two seconds, chosen by Atlas randomness.
-        if ((DateTime.UtcNow - lastArm).TotalSeconds > 2)
+        // Everyone goes mental: arm and enrage nearby peds on a timer, chosen by Atlas randomness.
+        if ((DateTime.UtcNow - lastArm).TotalSeconds > armEverySeconds)
         {
             lastArm = DateTime.UtcNow;
             // MUST come before the loop: EnsureRelationships is what creates the
@@ -698,8 +727,6 @@ public class QDayScript : Script
                 Log.Write($"riot: {armedTotal} armed, starting the storm");
             }
         }
-        Hud.Ticker(ticker);
-        if (Elapsed() > 300) GoTo(Phase.Ending);
     }
 
     void EndQDay()
@@ -722,6 +749,40 @@ public class QDayScript : Script
         var backend = string.IsNullOrEmpty(r.Backend) ? "IBM HARDWARE" : r.Backend.ToUpper();
         ticker.Add($"KEY {commit} FACTORED ON {backend}");
         ticker.AddRange(lines);
+    }
+
+    // ---- Escape: cross the city in lockdown (see Lockdown.cs) -------------------------
+    const float EscapeExitRadius = 40f;   // measured in 2D: the placeholder district heights are rough
+
+    void BeginEscape()
+    {
+        if (!lockdown.Begin()) { GoTo(Phase.Ending); return; }
+        objectiveBlip = World.CreateBlip(LockdownGame.LastStop(lockdown.Graph));
+        objectiveBlip.Color = BlipColor.Yellow;
+        objectiveBlip.ShowRoute = !hideEscapeRoute;
+        if (hideEscapeRoute) Log.Write("DEBUG escape: route line hidden by HideEscapeRoute, stop blip kept");
+        LockdownGame.RaiseForceField(lockdown.Graph, lockdown.Layout);
+        Screen.ShowSubtitle("~b~Lester:~s~ The city's locked down. Get out while there's still a road.", 6000);
+    }
+
+    void TickEscape()
+    {
+        if (CheckForPlayerDeath()) return;
+
+        TickRiotWorld(EscapeArmSeconds);
+        if (debug) LockdownGame.DrawWalls(lockdown.Graph, lockdown.Layout);
+        LockdownGame.DrawHud(lockdown.Layout);
+
+        // TODO: the passport, briefcases and plane attach here. Until then, reaching the last stop ends the mission.
+        if (Game.Player.Character.Position.DistanceTo2D(LockdownGame.LastStop(lockdown.Graph)) < EscapeExitRadius)
+            GoTo(Phase.Ending);
+    }
+
+    void EndEscape()
+    {
+        LockdownGame.ClearForceField();
+        objectiveBlip?.Delete();
+        objectiveBlip = null;
     }
 
     // ---- Ending: fade out, credit the hardware, back to Idle -------------------------
