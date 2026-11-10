@@ -7,3 +7,4 @@ mod/bin/*
 tests/*/bin/
 tests/*/obj/
 .deploy/
+textures/
