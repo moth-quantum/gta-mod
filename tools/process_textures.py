@@ -2,31 +2,46 @@
 """Run GTA V billboard textures through Moth Atlas's quantum blur (blur-v1) and save them back as DDS
 files the game can load in place of the originals.
 
-    python3 tools/process_textures.py --input textures/originals --output textures/pilot/mild \
-        --strength mild [--files ah_bboards1.dds ...] [--dry-run]
+Setup, once, from the repo root (needs Pillow 13, pinned in tools/requirements-textures.txt):
+
+    python3 -m venv .venv && .venv/bin/pip install -r tools/requirements-textures.txt
+
+Run, then check what it wrote:
+
+    .venv/bin/python tools/process_textures.py --input textures/originals --output textures/mild --strength mild
+    .venv/bin/python tools/process_textures.py --input textures/originals --output textures/mild --strength mild --verify
+
+Other options: --files a.dds b.dds (only these), --dry-run (print the plan, send nothing),
+--derive-lods (see below).
 
 Every output keeps its original's format (DXT1/DXT5), width, height and mip count: the original's
 128-byte DDS header is copied unchanged and only the block data is replaced, then the output's header
-is re-read and checked against the original. Any mismatch stops the run.
+is re-read and checked against the original. --verify re-reads every output from disk, compares its
+header and size with the original, decodes every mip level and checks it against the top level, and
+lists any mismatch by name.
 
 - Opaque look: the image is sent as RGB without alpha, so the engine blurs all of it (it would
-  otherwise use the alpha channel as a mask). The original alpha is put back afterwards, so a DXT5
-  keeps its alpha exactly as it was.
+  otherwise use the alpha channel as a mask). The original alpha is put back afterwards; for DXT5 the
+  alpha blocks are copied from the original byte for byte, so the alpha is exactly the original's.
 - Simulator only: execution_mode "sim" (exact statevector simulation). Nothing here sends a job to
   hardware; the guard in submit_params refuses any preset that tries.
-- _lod files whose full-size partner is in the input are not sent to Atlas: they're the processed
-  partner shrunk to the LOD's dimensions. A _lod file with no partner in the input is the only copy
-  of that billboard, so it's processed like any other file.
-- Files with identical texture data are sent once and the result reused.
-- The engine's raw PNG for each file is kept in <output>/_raw/, and a later run reuses it rather than
-  sending the job again, so re-encoding never costs another job.
-- Writes <output>/manifest.csv: texture, dictionary (blank for now), output path, Atlas job id, engine,
-  parameters, seconds taken, source.
+- Size limits: the engine blurs at most 1024 x 1024 pixels in one pass and the asset upload shrinks
+  anything over 1440 on a side, so bigger textures are halved before they're sent and the result is
+  scaled back up. The manifest's source column says so for each one.
+- _lod files are sent to Atlas like any other texture: a LOD isn't always a smaller copy of its
+  partner (sc1_25_rsd_jp_billboard_0001_lod.dds holds the billboard in its top half and a brick
+  texture below). --derive-lods brings back the old behaviour, the partner shrunk to the LOD's size.
+- Files with identical texture data (same dimensions and bytes) are sent once and the result copied.
+- Resumable: the engine's PNG for each file is kept in <output>/_raw/ with its job id beside it, and
+  any later run reuses it instead of sending the job again. The manifest is rewritten after every file.
+- A failed job is retried once, then skipped and listed as FAILED in the manifest. Anything from the
+  API about credits, quota or rate limits stops the run straight away (exit code 3).
+- Writes <output>/manifest.csv with a row per file: texture, dictionary (blank for now), output path,
+  source, Atlas job id, engine, parameters, seconds taken.
 
-The Atlas key is read from MOTH_API_TOKEN and never written anywhere. Needs Pillow 13 or later and
-numpy; certifi is used if present. Pillow 11.2's BC1/BC3 encoder corrupts everything past the first
-196,608 pixels of a level (and can crash), so older versions are refused. Each encoded level is also
-decoded again and compared with what went in, as a guard against a bad encoder.
+The Atlas key is read from MOTH_API_TOKEN and never written anywhere. Pillow 11.2's BC1/BC3 encoder
+corrupts everything past the first 196,608 pixels of a level (and can crash), so older versions are
+refused, and each encoded level of 64 x 64 or more is decoded again and compared with what went in.
 """
 
 import argparse
@@ -35,6 +50,7 @@ import hashlib
 import io
 import json
 import os
+import re
 import ssl
 import struct
 import sys
@@ -70,7 +86,12 @@ HARDWARE_KEYS = ("machine", "backend", "provider", "io")
 DDS_HEADER_BYTES = 128
 MAX_ENCODE_ERROR = 30   # mean absolute RGB error per level, out of 255; a broken encoder gives 70+
 FOURCC_BLOCK_BYTES = {b"DXT1": 8, b"DXT5": 16}
-MANIFEST_FIELDS = ["texture", "dictionary", "output_path", "atlas_job_id", "engine", "parameters", "seconds", "source"]
+MANIFEST_FIELDS = ["texture", "dictionary", "output_path", "source", "atlas_job_id", "engine", "parameters", "seconds"]
+QUOTA_WORDS = re.compile(r"credit|quota|rate.?limit|too many requests|insufficient|balance|billing|payment", re.I)
+
+
+class QuotaStop(Exception):
+    """The API said something about credits, quota or rate limits: stop the run, don't retry."""
 
 
 # ---------------------------------------------------------------- DDS
@@ -187,13 +208,16 @@ def request(method, url, token=None, body=None, raw=None, headers=None, timeout=
 
 
 def send(method, path, token, body=None, tries=4):
-    """Atlas API call with retries on the 429/5xx and timeouts it gives under load."""
+    """Atlas API call, retried on the 5xx and timeouts it gives under load. A 402, a 429 or any message
+    about credits, quota or rate limits raises QuotaStop instead."""
     for attempt in range(tries):
         try:
             return json.loads(request(method, BASE_URL + path, token, body) or b"{}")
         except urllib.error.HTTPError as e:
             text = e.read()[:300].decode(errors="replace")
-            if e.code in (429, 500, 502, 503, 504) and attempt < tries - 1:
+            if e.code in (402, 429) or QUOTA_WORDS.search(text):
+                raise QuotaStop(f"{method} {path}: HTTP {e.code} {text}") from None
+            if e.code in (500, 502, 503, 504) and attempt < tries - 1:
                 time.sleep(2 * (attempt + 1))
                 continue
             raise RuntimeError(f"{method} {path}: HTTP {e.code} {text}") from None
@@ -249,6 +273,8 @@ def blur(rgb, name, params, token, log):
             break
         if status in ("failed", "error", "cancelled", "canceled"):
             detail = send("GET", f"/api/v1/jobs/{job_id}", token)
+            if QUOTA_WORDS.search(json.dumps(detail)):
+                raise QuotaStop(f"job {job_id} {status}: {json.dumps(detail)[:400]}")
             raise RuntimeError(f"job {job_id} {status}: {json.dumps(detail)[:400]}")
         if time.time() - start > TIMEOUT_SECONDS:
             raise RuntimeError(f"job {job_id} still {status} after {TIMEOUT_SECONDS} s")
@@ -274,8 +300,8 @@ def lod_partner(name, names):
     return None
 
 
-def plan(input_dir, files):
-    """Work out what each file needs: ('atlas',), ('lod', partner) or ('duplicate', first)."""
+def plan(input_dir, files, derive_lods):
+    """Work out what each file needs: ('atlas',), ('duplicate', first) or, with derive_lods, ('lod', partner)."""
     all_names = sorted(p.name for p in input_dir.glob("*.dds"))
     chosen = files or all_names
     missing = [f for f in chosen if f not in all_names]
@@ -284,7 +310,7 @@ def plan(input_dir, files):
     infos = {n: DdsInfo(input_dir / n) for n in all_names}
     steps, first_by_content = {}, {}
     for name in chosen:
-        partner = lod_partner(name, all_names)
+        partner = lod_partner(name, all_names) if derive_lods else None
         if partner:
             steps[name] = ("lod", partner)
             continue
@@ -294,12 +320,189 @@ def plan(input_dir, files):
         else:
             first_by_content[digest] = name
             steps[name] = ("atlas",)
-    # A LOD whose partner wasn't asked for still needs the partner processed.
+    # A derived LOD whose partner wasn't asked for still needs the partner processed.
     for name, step in list(steps.items()):
         if step[0] == "lod" and step[1] not in steps:
             steps[step[1]] = ("atlas",)
     order = sorted(steps, key=lambda n: (steps[n][0] != "atlas", n))
     return infos, steps, order
+
+
+# ---------------------------------------------------------------- run
+
+class Run:
+    def __init__(self, args, infos, steps, params):
+        self.args, self.infos, self.steps, self.params = args, infos, steps, params
+        self.params_text = json.dumps(params, sort_keys=True)
+        self.raw_dir = args.output / "_raw"
+        self.manifest_path = args.output / "manifest.csv"
+        self.rows = {}
+        if self.manifest_path.exists():
+            with self.manifest_path.open() as f:
+                self.rows = {r["texture"]: r for r in csv.DictReader(f)}
+        self.jobs_sent = 0
+        self.failed = []
+
+    def raw_paths(self, name):
+        return self.raw_dir / (name[:-4] + ".png"), self.raw_dir / (name[:-4] + ".json")
+
+    def row(self, name, output_path, source, job_id="", seconds=""):
+        self.rows[name] = {"texture": name, "dictionary": self.rows.get(name, {}).get("dictionary", ""),
+                           "output_path": str(output_path) if output_path else "", "source": source,
+                           "atlas_job_id": job_id, "engine": ENGINE, "parameters": self.params_text, "seconds": seconds}
+
+    def save_manifest(self):
+        tmp = self.manifest_path.with_suffix(".tmp")
+        with tmp.open("w", newline="") as f:
+            w = csv.DictWriter(f, MANIFEST_FIELDS)
+            w.writeheader()
+            for n in sorted(self.rows):
+                w.writerow({k: self.rows[n].get(k, "") for k in MANIFEST_FIELDS})
+        tmp.replace(self.manifest_path)
+
+    def result_for(self, name):
+        """The engine's result for name at full size, from _raw/, or None if there isn't one."""
+        raw, _ = self.raw_paths(name)
+        if not raw.exists():
+            return None
+        info = self.infos[name]
+        img = Image.open(raw).convert("RGB")
+        if img.size != (info.width, info.height):
+            img = img.resize((info.width, info.height), Image.Resampling.LANCZOS)
+        return img
+
+    def source_text(self, name, sw, sh):
+        info = self.infos[name]
+        if (sw, sh) == (info.width, info.height):
+            return "processed"
+        return f"processed; scaled: blurred at {sw}x{sh} and scaled back up to {info.width}x{info.height}"
+
+    def fetch(self, name, token):
+        """Make sure _raw/ has the engine's result for name, sending the job if it hasn't. Returns
+        (job id, seconds, source), or None if the job failed twice."""
+        info = self.infos[name]
+        raw, meta_path = self.raw_paths(name)
+        sw, sh = send_size(info.width, info.height, self.params["size"])
+        if raw.exists():
+            meta = json.loads(meta_path.read_text()) if meta_path.exists() else {}
+            print(f"  reusing {raw}")
+            return meta.get("job_id", ""), meta.get("seconds", ""), self.source_text(name, sw, sh)
+        rgb = decode_top(self.args.input / name).convert("RGB")
+        if (sw, sh) != rgb.size:
+            rgb = rgb.resize((sw, sh), Image.Resampling.LANCZOS)
+            print(f"  SCALED: sending at {sw}x{sh}, scaled back up to {info.width}x{info.height} afterwards")
+        for attempt in (1, 2):
+            start = time.time()
+            try:
+                self.jobs_sent += 1
+                result, job_id, _ = blur(rgb, name, self.params, token, print)
+            except QuotaStop:
+                raise
+            except Exception as e:   # noqa: anything else is one failed attempt
+                print(f"  attempt {attempt} failed: {e}", flush=True)
+                if attempt == 2:
+                    self.failed.append((name, str(e)))
+                    return None
+                time.sleep(5)
+                continue
+            seconds = f"{time.time() - start:.1f}"
+            result.save(raw)
+            meta_path.write_text(json.dumps({"job_id": job_id, "seconds": seconds, "sent_at": [sw, sh], "params": self.params}) + "\n")
+            return job_id, seconds, self.source_text(name, sw, sh)
+
+    def write(self, name, img, out_path):
+        """Encode img as name's DDS, unless an output newer than its raw result is already there."""
+        raw, _ = self.raw_paths(self.steps[name][1] if self.steps[name][0] != "atlas" else name)
+        if out_path.exists() and raw.exists() and out_path.stat().st_mtime >= raw.stat().st_mtime:
+            if DdsInfo(out_path).summary() == self.infos[name].summary():
+                return
+        alpha = np.asarray(decode_top(self.args.input / name))[..., 3]
+        write_dds(img, alpha, self.infos[name], out_path)
+
+    def process(self, name, token):
+        info, step = self.infos[name], self.steps[name]
+        out_path = self.args.output / name
+        print(f"{name}  {info.format} {info.width}x{info.height} mips {info.mips}  ({' '.join(step)})", flush=True)
+        if step[0] == "atlas":
+            got = self.fetch(name, token)
+            if got is None:
+                self.row(name, "", "FAILED: job failed twice, skipped")
+                return
+            job_id, seconds, source = got
+            self.write(name, self.result_for(name), out_path)
+            self.row(name, out_path, source, job_id, seconds)
+        elif step[0] == "duplicate":
+            first = self.rows.get(step[1], {})
+            img = self.result_for(step[1])
+            if img is None:
+                self.row(name, "", f"FAILED: duplicate of {step[1]}, which failed")
+                return
+            self.write(name, img, out_path)
+            self.row(name, out_path, f"duplicate of {step[1]}", first.get("atlas_job_id", ""), "0")
+        else:   # lod, only with --derive-lods
+            img = self.result_for(step[1])
+            if img is None:
+                self.row(name, "", f"FAILED: derived from {step[1]}, which failed")
+                return
+            self.write(name, img.resize((info.width, info.height), Image.Resampling.LANCZOS), out_path)
+            self.row(name, out_path, f"derived: {step[1]} shrunk to {info.width}x{info.height} (--derive-lods)",
+                     self.rows.get(step[1], {}).get("atlas_job_id", ""), "0")
+        print(f"  wrote {out_path}", flush=True)
+
+
+# ---------------------------------------------------------------- verify
+
+def decode_level(info, payload, offset, w, h):
+    """Decode one mip level by giving Pillow a one-level header with the level's dimensions."""
+    hdr = bytearray(info.header)
+    struct.pack_into("<II", hdr, 12, h, w)
+    struct.pack_into("<I", hdr, 28, 1)
+    n = level_bytes(w, h, info.fourcc)
+    return Image.open(io.BytesIO(bytes(hdr) + payload[offset:offset + n])).convert("RGBA"), offset + n
+
+
+def verify(input_dir, output_dir, names):
+    """Re-read every output from disk and check it against its original. Returns a list of problems."""
+    problems = []
+    for name in names:
+        out_path = output_dir / name
+        if not out_path.exists():
+            problems.append(f"{name}: no output")
+            continue
+        try:
+            orig, out = DdsInfo(input_dir / name), DdsInfo(out_path)
+        except Exception as e:
+            problems.append(f"{name}: unreadable: {e}")
+            continue
+        if out.summary() != orig.summary():
+            problems.append(f"{name}: output {out.summary()}, original {orig.summary()}")
+            continue
+        if out.header != orig.header:
+            problems.append(f"{name}: header bytes differ from the original's")
+        if out.fourcc == b"DXT5":
+            a = np.frombuffer(out.payload, np.uint8).reshape(-1, 16)[:, :8]
+            b = np.frombuffer(orig.payload, np.uint8).reshape(-1, 16)[:, :8]
+            if not np.array_equal(a, b):
+                problems.append(f"{name}: DXT5 alpha blocks differ from the original's")
+        offset, top = 0, None
+        for i, (w, h) in enumerate(out.levels()):
+            try:
+                img, offset = decode_level(out, out.payload, offset, w, h)
+            except Exception as e:
+                problems.append(f"{name}: mip {i} ({w}x{h}) doesn't decode: {e}")
+                break
+            if img.size != (w, h):
+                problems.append(f"{name}: mip {i} decodes at {img.size}, expected {w}x{h}")
+                break
+            if i == 0:
+                top = img
+                continue
+            if w * h >= 64 * 64:   # each level should look like the top level shrunk
+                ref = np.asarray(top.resize((w, h), Image.Resampling.LANCZOS), dtype=np.int16)
+                err = np.abs(np.asarray(img, dtype=np.int16) - ref)[..., :3].mean()
+                if err > MAX_ENCODE_ERROR:
+                    problems.append(f"{name}: mip {i} ({w}x{h}) is {err:.1f}/255 away from the top level shrunk")
+    return problems
 
 
 # ---------------------------------------------------------------- main
@@ -311,13 +514,23 @@ def main():
     ap.add_argument("--strength", required=True, choices=sorted(PRESETS), help="which preset to use")
     ap.add_argument("--files", nargs="*", help="only these file names (default: every .dds in --input)")
     ap.add_argument("--dry-run", action="store_true", help="print the plan and stop, sending nothing")
+    ap.add_argument("--verify", action="store_true", help="check the outputs against the originals, sending nothing")
+    ap.add_argument("--derive-lods", action="store_true",
+                    help="make a _lod file by shrinking its processed partner instead of sending it (off by default)")
     args = ap.parse_args()
 
-    infos, steps, order = plan(args.input, args.files)
+    infos, steps, order = plan(args.input, args.files, args.derive_lods)
+    if args.verify:
+        problems = verify(args.input, args.output, sorted(steps))
+        print(f"verified {len(steps)} outputs: {len(problems)} problem(s)")
+        for p in problems:
+            print(f"  {p}")
+        sys.exit(1 if problems else 0)
+
     params = submit_params(args.strength)
-    atlas_jobs = [n for n in order if steps[n][0] == "atlas" and not (args.output / "_raw" / (n[:-4] + ".png")).exists()]
+    to_send = [n for n in order if steps[n][0] == "atlas" and not (args.output / "_raw" / (n[:-4] + ".png")).exists()]
     print(f"{len(order)} files, {sum(steps[n][0] == 'atlas' for n in order)} unique to blur, "
-          f"{len(atlas_jobs)} Atlas jobs to send (the rest reuse a saved result), preset {args.strength}: {json.dumps(params)}")
+          f"{len(to_send)} Atlas jobs to send (the rest reuse a saved result), preset {args.strength}: {json.dumps(params)}")
     if args.dry_run:
         for n in order:
             i = infos[n]
@@ -325,69 +538,24 @@ def main():
         return
 
     token = os.environ.get("MOTH_API_TOKEN")
-    if atlas_jobs and not token:
+    if to_send and not token:
         sys.exit("MOTH_API_TOKEN is not set")
-
-    args.output.mkdir(parents=True, exist_ok=True)
-    raw_dir = args.output / "_raw"
-    raw_dir.mkdir(exist_ok=True)
-    manifest_path = args.output / "manifest.csv"
-    old_rows = {}
-    if manifest_path.exists():
-        with manifest_path.open() as f:
-            old_rows = {r["texture"]: r for r in csv.DictReader(f)}
-    rows, processed = {}, {}
-    params_text = json.dumps(params, sort_keys=True)
-
-    for name in order:
-        info, step = infos[name], steps[name]
-        out_path = args.output / name
-        alpha = np.asarray(decode_top(args.input / name))[..., 3]
-        print(f"{name}  {info.format} {info.width}x{info.height} mips {info.mips}  ({' '.join(step)})", flush=True)
-        if step[0] == "atlas":
-            raw = raw_dir / (name[:-4] + ".png")
-            start = time.time()
-            sw, sh = send_size(info.width, info.height, params["size"])
-            if raw.exists():
-                result = Image.open(raw).convert("RGB")
-                old = old_rows.get(name, {})
-                job_id, seconds, source = old.get("atlas_job_id", ""), old.get("seconds", ""), old.get("source") or "saved result"
-                print(f"  reusing {raw}")
-            else:
-                rgb = decode_top(args.input / name).convert("RGB")
-                if (sw, sh) != rgb.size:
-                    rgb = rgb.resize((sw, sh), Image.Resampling.LANCZOS)
-                    print(f"  SCALED: sending at {sw}x{sh}, scaled back up to {info.width}x{info.height} afterwards")
-                result, job_id, meta = blur(rgb, name, params, token, print)
-                result.save(raw)
-                seconds = f"{time.time() - start:.1f}"
-                source = "atlas"
-                if (sw, sh) != (info.width, info.height):
-                    source += f"; SCALED: blurred at {sw}x{sh} and scaled back up to {info.width}x{info.height}"
-            if result.size != (info.width, info.height):
-                result = result.resize((info.width, info.height), Image.Resampling.LANCZOS)
-            processed[name] = result
-            write_dds(result, alpha, info, out_path)
-            rows[name] = [name, "", str(out_path), job_id, ENGINE, params_text, seconds, source]
-        elif step[0] == "duplicate":
-            src = processed[step[1]]
-            write_dds(src, alpha, info, out_path)
-            r = rows[step[1]]
-            rows[name] = [name, "", str(out_path), r[3], ENGINE, params_text, "0", f"same texture data as {step[1]}"]
-        else:   # lod
-            src = processed[step[1]].resize((info.width, info.height), Image.Resampling.LANCZOS)
-            write_dds(src, alpha, info, out_path)
-            rows[name] = [name, "", str(out_path), rows[step[1]][3], ENGINE, params_text, "0", f"{step[1]} shrunk to {info.width}x{info.height}, not sent to Atlas"]
-        out = DdsInfo(out_path)
-        print(f"  wrote {out_path}  {out.format} {out.width}x{out.height} mips {out.mips}  matches original", flush=True)
-
-    merged = {**old_rows, **{n: dict(zip(MANIFEST_FIELDS, r)) for n, r in rows.items()}}
-    with manifest_path.open("w", newline="") as f:
-        w = csv.DictWriter(f, MANIFEST_FIELDS)
-        w.writeheader()
-        for n in sorted(merged):
-            w.writerow(merged[n])
-    print(f"manifest: {manifest_path}")
+    (args.output / "_raw").mkdir(parents=True, exist_ok=True)
+    run = Run(args, infos, steps, params)
+    start = time.time()
+    try:
+        for name in order:
+            run.process(name, token)
+            run.save_manifest()
+    except QuotaStop as e:
+        run.save_manifest()
+        print(f"STOPPED: the API reported a credit, quota or rate limit problem: {e}")
+        print(f"{run.jobs_sent} job(s) sent this run. Re-run the same command to carry on once it's sorted.")
+        sys.exit(3)
+    print(f"done in {time.time() - start:.0f} s: {run.jobs_sent} job(s) sent this run, {len(run.failed)} failed")
+    for name, err in run.failed:
+        print(f"  FAILED {name}: {err}")
+    print(f"manifest: {run.manifest_path}")
 
 
 if __name__ == "__main__":

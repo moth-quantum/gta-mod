@@ -1,0 +1,6 @@
+# Python packages for tools/process_textures.py. Set up once from the repo root:
+#   python3 -m venv .venv && .venv/bin/pip install -r tools/requirements-textures.txt
+# Pillow 13 or later is required: 11.2's DXT encoder corrupts large textures.
+pillow==13.0.0
+numpy==2.5.4
+certifi==2026.10.23
