@@ -229,7 +229,7 @@ Straight after the title, while the riot builds:
 
 ## 10. Ending
 
-**Status:** in the game, played. The credit wording is built in pull request #12, not yet played. The new title was decided on 10 November and isn't in the code yet.
+**Status:** in the game, played. The credit wording is built in pull request #12, not yet played. The new title is built in pull request #14, not yet played.
 
 The screen fades to black.
 
