@@ -47,10 +47,12 @@ public class QDayScript : Script
     DateTime phaseStarted = DateTime.UtcNow;
 
     int chipIndex = DefaultChipIndex;  // which of the three chips we are on
-    int logicalQubits = 0;             // deliveries that came in under threshold
+    // The part number on the HUD, 1 to 3. It has the old logical qubit counter's name because OnTick's Hud.Draw
+    // line passes it, and the stacked branches change the lines next to that one. Rename it once they're merged.
+    int logicalQubits => chipIndex + 1;
     double errorRate = double.NaN;     // live figure from Atlas, NaN = none yet
     double damagePenalty = 0;          // truck damage since pickup, added to errorRate
-    const double Threshold = 0.02;     // fez/marrakesh land at ~1.7%, brisbane at 8.5%
+    const double Threshold = 0.02;     // the finished machine's target; each delivery is judged on its part's own target (Locations.Targets)
 
     // idle
     Blip startBlip;                    // the mission start, shown while Idle
@@ -59,6 +61,7 @@ public class QDayScript : Script
     // heist
     bool heistSceneSpawned;
     bool heistCanReachTruck;
+    bool partAttempted;                // this part has been tried before, so its opening line isn't replayed
     Prop chipProp;
     Vehicle truck;
     float truckHealthAtPickup;
@@ -177,6 +180,9 @@ public class QDayScript : Script
         // to Q-Day, F8 drops you in Legion Square, F9 starts the mission from anywhere. All logged so a
         // recording that used them is obvious.
         if (e.KeyCode == Keys.F9 && phase == Phase.Idle) { Log.Write("DEBUG F9 start"); GoTo(Phase.Pitch); }
+        // F6 in Calibrating uses the part's recorded result, and returns so the press can't also fire the F6 line below for the next phase.
+        // The older F6 Calibrating line further down is left in place, unreachable, to keep it out of the stacked branches' way.
+        if (e.KeyCode == Keys.F6 && phase == Phase.Calibrating) { Log.Write("DEBUG F6 recorded calibration"); FinishCalibration(Atlas.RecordedErrorRate(loc.Chips[chipIndex].Key)); return; }
         if (e.KeyCode == Keys.F5) DebugTeleport();
         if (e.KeyCode == Keys.F6 && phase == Phase.Calibrating) { Log.Write("DEBUG F6 recorded calibration"); FinishCalibration(chipIndex == loc.Chips.Count - 1 ? 0.0173 : 0.085); }
         if (e.KeyCode == Keys.F6 && phase == Phase.Threshold) { Log.Write("DEBUG F6 recorded qday"); StartQDay(AtlasResult.Recorded()); }
@@ -233,7 +239,7 @@ public class QDayScript : Script
         // Delivery runs at 3-5 stars. Without this, aborting with F10 mid-delivery
         // ended the mission but left the player being hunted by the military.
         Game.Player.WantedLevel = 0;
-        chipIndex = DefaultChipIndex; logicalQubits = 0; errorRate = double.NaN; damagePenalty = 0;
+        chipIndex = DefaultChipIndex; partAttempted = false; errorRate = double.NaN; damagePenalty = 0;
         lastResult = null; qdayResult = null;
         stormStarted = false; armedTotal = 0;
     }
@@ -354,8 +360,9 @@ public class QDayScript : Script
         objectiveBlip.Color = BlipColor.Yellow;
         objectiveBlip.ShowRoute = true;
         heistSceneSpawned = false;
-        Screen.ShowSubtitle($"~b~Lester:~s~ {chip.Line}", 6000);
-        Log.Write($"heist {chipIndex} -> {chip.Label} at {chip.Pos}");
+        if (!partAttempted) Screen.ShowSubtitle($"~b~Lester:~s~ {chip.Line}", 6000);   // not again on a retry of the same part
+        Log.Write($"heist {chipIndex} -> {chip.Label} at {chip.Pos}{(partAttempted ? ", retry" : "")}");
+        partAttempted = true;
     }
 
     void TickHeist()
@@ -463,6 +470,9 @@ public class QDayScript : Script
         truck.Mods[VehicleModType.Brakes].Index = truck.Mods[VehicleModType.Brakes].Count - 1;
         truck.Mods[VehicleModType.Transmission].Index = truck.Mods[VehicleModType.Transmission].Count - 1;
         truck.Mods[VehicleModType.Armor].Index = truck.Mods[VehicleModType.Armor].Count - 1;
+        // Only collisions should count as damage, so the truck ignores gunfire. Fire, explosions and crashes still
+        // damage it, so a destroyed truck still fails the mission. Tyres are left as they are.
+        truck.IsBulletProof = true;
     }
 
     void EndHeist()
@@ -553,7 +563,7 @@ public class QDayScript : Script
     {
         var chip = loc.Chips[chipIndex];
         atlas.Calibrate(CalibrationJob, chip.Key);
-        Screen.ShowSubtitle("~b~Lester:~s~ Installing. Calibrating on the real noise model...", 5000);
+        Screen.ShowSubtitle("~b~Lester:~s~ Installing the new part. Let's see where the errors are now.", 5000);
         Log.Write($"delivered {chip.Key}, penalty {damagePenalty:P2}, calibrating");
     }
 
@@ -562,28 +572,57 @@ public class QDayScript : Script
         if (CheckForPlayerDeath()) return;
 
         if (Arrived(CalibrationJob) is { } r) FinishCalibration(r.ErrorRate);
-        // Timeout keeps the demo alive.
-        else if (Elapsed() > 180) { Log.Write("calibration timeout"); FinishCalibration(0.1); }
+        // Timeout keeps the demo alive, with the part's own recorded result, so a slow job can't fail a part that would pass.
+        else if (Elapsed() > 180)
+        {
+            var key = loc.Chips[chipIndex].Key;
+            var recorded = Atlas.RecordedErrorRate(key);
+            Log.Write($"calibration timeout, using the recorded {key} result {recorded:P2}");
+            FinishCalibration(recorded);
+        }
     }
 
+    const int ResultBeforeLesterMs = 2500;   // the result title card shows this long before Lester speaks, so neither overwrites the other
+    const int LesterBeforeNextMs = 4000;
+
+    /// <summary>
+    /// Judges a delivered part on its own target. A pass on the last part reaches Threshold, a pass on another moves
+    /// on to the next part, and a part over its target sends the player back for the same part.
+    /// </summary>
     void FinishCalibration(double measured)
     {
+        var chip = loc.Chips[chipIndex];
+        double target = loc.Target(chip);
         errorRate = measured;
         var total = DisplayedError();
-        bool clean = total <= Threshold;
+        bool clean = total < target;
         bool lastChip = chipIndex == loc.Chips.Count - 1;
-        Log.Write($"calibrated chip {chipIndex}: live {errorRate:P2} + damage {damagePenalty:P2} = {total:P2} -> {(clean ? "LOGICAL QUBIT" : "too noisy")}");
-        if (clean) { logicalQubits++; Hud.BigMessage("LOGICAL QUBIT", $"{logicalQubits} / 3  error {total:P1}"); }
-        else Hud.BigMessage("TOO NOISY", $"error {total:P1} > threshold {Threshold:P0}. " + (lastChip ? "bring another one, carefully." : "upgrade the chip."));
-        Wait(4000);
+        Log.Write($"calibrated {chip.Key}: live {errorRate:P2} + damage {damagePenalty:P2} = {total:P2}, target {Percent(target)}% -> {(clean ? "under the target" : "over the target, same part again")}");
 
-        // Rule: the machine reaches threshold when the best chip is installed clean.
-        // Brisbane and torino will never clear 2% (8.5% and 4.6% measured), they are the story of
-        // getting there. Fez lands at 1.7%, so only truck damage can make it fail; then repeat fez.
-        if (lastChip && clean) { GoTo(Phase.Threshold); return; }
-        if (!lastChip) chipIndex++;
+        Hud.BigMessage($"ERROR RATE {total * 100:0.0}%", clean ? $"target under {Percent(target)}%" : $"over the {Percent(target)}% target");
+        Wait(ResultBeforeLesterMs);
+        Screen.ShowSubtitle("~b~Lester:~s~ " + (clean ? PassLine(chip.Key) : "Over the target. That's your driving. Get me another one, and don't damage it."), 6000);
+        Wait(LesterBeforeNextMs);
+
+        if (clean && lastChip) { GoTo(Phase.Threshold); return; }
+        if (clean)
+        {
+            chipIndex++;
+            partAttempted = false;
+        }
         GoTo(Phase.Heist);
     }
+
+    static string PassLine(string key) => key switch
+    {
+        "brisbane" => "Under 11%. Good enough for now.",
+        "torino" => "Under 6%. Getting closer.",
+        "fez" => "Under 2%. It's fixing its own mistakes. We have a working machine.",
+        _ => "Under the target.",
+    };
+
+    /// <summary>A target as a percentage without trailing zeros: 11, 6, 2.</summary>
+    static string Percent(double fraction) => (fraction * 100).ToString("0.##");
 
     void EndCalibrating()
     {
@@ -786,11 +825,13 @@ public static class Hud
     public static void Draw(Phase phase, int chip, int logical, double err, double penalty, double threshold, AtlasResult last)
     {
         var errText = double.IsNaN(err) ? "--" : (err * 100).ToString("0.00") + "%";
-        var color = double.IsNaN(err) ? Color.White : (err <= threshold ? Color.LimeGreen : Color.OrangeRed);
+        double target = Locations.Default.Target(Locations.Default.Chips[Math.Min(chip, Locations.Default.Chips.Count - 1)]);   // the part's, not the threshold passed in
+        if (!double.IsNaN(err)) errText = (err * 100).ToString("0.0") + "%";   // one decimal, set here to leave the line above as it was
+        var color = double.IsNaN(err) ? Color.White : (err < target ? Color.LimeGreen : Color.OrangeRed);
         new ContainerElement(new PointF(920, 140), new SizeF(340, 92), Color.FromArgb(160, 0, 0, 0)).Draw();
         new TextElement("Q-DAY  " + phase.ToString().ToUpper(), new PointF(930, 144), 0.42f, Color.White, Font.ChaletLondon, Alignment.Left).Draw();
-        new TextElement($"logical qubits  {logical} / 3", new PointF(930, 168), 0.38f, Color.White, Font.ChaletLondon, Alignment.Left).Draw();
-        new TextElement($"error rate  {errText}  penalty {penalty:P2}  threshold {threshold * 100:0}%", new PointF(930, 190), 0.38f, color, Font.ChaletLondon, Alignment.Left).Draw();
+        new TextElement($"part {logical} / 3", new PointF(930, 168), 0.38f, Color.White, Font.ChaletLondon, Alignment.Left).Draw();
+        new TextElement($"error {errText}  target {target * 100:0.##}%  penalty {penalty * 100:0.0}%", new PointF(930, 190), 0.38f, color, Font.ChaletLondon, Alignment.Left).Draw();
         if (phase == Phase.Calibrating || phase == Phase.Threshold)
             new TextElement(phase == Phase.Threshold ? "IBM hardware queue..." : "calibrating on Atlas...", new PointF(930, 212), 0.34f, Color.LightBlue, Font.ChaletLondon, Alignment.Left).Draw();
     }
@@ -889,6 +930,9 @@ public class Locations
     public class Chip { public string Key, Label, Line; public Vector3 Pos; public int Wanted; }
     public class Site { public string Name; public Vector3 Pos; }
     public Site Start, Lab; public List<Chip> Chips; public Site Ending;
+    // Each part's error-rate target, keyed by Chip.Key. It's kept out of Chip because feature/hack changes those lines; fold it in once that's merged.
+    public Dictionary<string, double> Targets;
+    public double Target(Chip chip) => Targets[chip.Key];
 
     public static readonly Locations Default = new()
     {
@@ -907,6 +951,10 @@ public class Locations
             new() { Key = "torino",   Label = "FIB Building control plane", Pos = new(156.67f, -713.8f, 33.0f),    Wanted = 4, Line = "Government-grade control electronics. They will notice." },
             new() { Key = "fez",      Label = "Fort Zancudo qubit array",   Pos = new(-2047.0f, 3132.0f, 32.8f),   Wanted = 5, Line = "The real thing. Military. Do not scratch it." },
         ],
+        // Each part has to come in under its own target, which tightens as the machine gets closer. With the recorded
+        // error rates (8.5%, 4.56%, 1.73%) and 5 points per 1000 body health lost, the drive back can lose about 500
+        // body health with the fridge, about 280 with the command system and about 54 with the chip.
+        Targets = new() { ["brisbane"] = 0.11, ["torino"] = 0.06, ["fez"] = 0.02 },
         Ending = new()
         {
             Name = "Vinewood sign",

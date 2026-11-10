@@ -29,6 +29,9 @@ To change the mission, edit `mod/QDay.cs`, rebuild (`dotnet build` in `mod/`), a
 - The Atlas key goes only in the game's `scripts\QDay.ini` (`[Atlas] ApiKey`). Never commit it: the repo's `mod/QDay.ini` keeps it empty. Without a key the mission plays from saved real results.
 - Story mode only. Never open GTA Online with the mod installed.
 
+## How a delivery is judged
+The three heists bring back three parts of one machine: a fridge from Humane Labs, a command system from the FIB Building and a chip from Fort Zancudo. Atlas measures each part's error rate after delivery, and crashing the truck on the way back adds to it, up to 5 points. Each part has to come in under its own target, 11%, 6% and then 2%, or the player goes back for the same part. Gunfire doesn't damage the truck, so only the driving counts. If a live measurement takes more than 3 minutes, the mission uses that part's saved result instead.
+
 ## Status (3 Nov 2026)
 The mission runs end to end in story mode. The leak ticker now scrolls at a
 constant speed independent of framerate, and the Q-Day riot has been seen for the
