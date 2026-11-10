@@ -550,9 +550,9 @@ def main():
     except QuotaStop as e:
         run.save_manifest()
         print(f"STOPPED: the API reported a credit, quota or rate limit problem: {e}")
-        print(f"{run.jobs_sent} job(s) sent this run. Re-run the same command to carry on once it's sorted.")
+        print(f"{run.jobs_sent} attempt(s) this run. Re-run the same command to carry on once it's sorted.")
         sys.exit(3)
-    print(f"done in {time.time() - start:.0f} s: {run.jobs_sent} job(s) sent this run, {len(run.failed)} failed")
+    print(f"done in {time.time() - start:.0f} s: {run.jobs_sent} attempt(s) this run (a failed upload counts as one), {len(run.failed)} file(s) failed")
     for name, err in run.failed:
         print(f"  FAILED {name}: {err}")
     print(f"manifest: {run.manifest_path}")
