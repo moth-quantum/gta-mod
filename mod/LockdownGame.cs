@@ -1,11 +1,9 @@
 // Escape lockdown, the game side: draws what Lockdown.cs decided. Calls natives, so script thread only.
-// Nothing here spawns an entity, so there is nothing to clean up when the mission ends.
-//
-// TODO(Alejandro): the force field that pushes the car back, minimap markers for nearby sealed
-// roads and particles attach at DrawWalls, using the same sealed wall sites.
+// The force field on sealed roads is in ForceFieldGame.cs; these are the calls QDay.cs makes to it.
 
 using System;
 using System.Drawing;
+using System.Collections.Generic;
 using System.IO;
 using GTA;
 using GTA.Math;
@@ -45,7 +43,28 @@ public static class LockdownGame
         return new Vector3(c[0], c[1], c[2]);
     }
 
-    /// <summary>A debug marker at every sealed wall site. Call every frame while the escape runs.</summary>
+    /// <summary>Puts the force field up at every sealed wall site. Call once as the escape begins.</summary>
+    public static void RaiseForceField(DistrictGraph g, LockdownLayout layout)
+    {
+        List<Wall> walls = [];
+        for (int i = 0; i < g.Links.Count; i++)
+            if (layout.Sealed[i]) walls.AddRange(g.Links[i].Walls);
+        ForceFieldGame.SetWalls(walls);
+    }
+
+    public static void TickForceField()
+    {
+        ForceFieldGame.Tick();
+        RoadTestGame.Tick();
+    }
+
+    public static void ClearForceField() => ForceFieldGame.Clear();
+
+    public static void DropTestWall() => ForceFieldGame.DropTestWall();
+
+    public static void RoadTestKey(bool shift, bool control, Blip missionRoute, bool hideRoute) => RoadTestGame.Key(shift, control, missionRoute, hideRoute);
+
+    /// <summary>Debug view: a blue marker at every sealed wall site. Call every frame while the escape runs.</summary>
     public static void DrawWalls(DistrictGraph g, LockdownLayout layout)
     {
         for (int i = 0; i < g.Links.Count; i++)

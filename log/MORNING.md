@@ -138,3 +138,6 @@ muted, using a combined local build of all five.
   DLL in, press F11. QDay.dll is NOT locked while the game runs. The in-box
   csc.exe is C# 5 only and cannot compile QDay.cs. CLAUDE.md's "build on the Mac"
   is stale.
+
+## 9 Nov: to raise with the platform team
+`entanglement-shader-v1` with style `frustrated` and interaction 25 fails with `Quantum circuit execution failed: Input matrix is not unitary.`, marked non-retryable. Job `5fef5932-8dcd-49db-9c5c-f19f809c9d76`: reflectance 0.45, absorption 0, layers 2, incoming_rays 4, resolution 256. The force field uses style `peaked` instead, so nothing here is waiting on it.

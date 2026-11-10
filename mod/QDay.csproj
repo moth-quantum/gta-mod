@@ -36,7 +36,7 @@
 
   <ItemGroup>
     <!-- Offline mode answers from these real Atlas results, so they ship inside the DLL. -->
-    <EmbeddedResource Include="..\recorded\graph_fake_*.json;..\recorded\qrng_qpu_64q_marrakesh.json;..\recorded\lockdown_*.json;lockdown_districts.json" LogicalName="recorded.%(Filename)%(Extension)" />
+    <EmbeddedResource Include="..\recorded\graph_fake_*.json;..\recorded\qrng_qpu_64q_marrakesh.json;..\recorded\lockdown_*.json;..\recorded\entanglement_lut.bin;lockdown_districts.json" LogicalName="recorded.%(Filename)%(Extension)" />
   </ItemGroup>
 
   <!-- Copy the merged DLL into the game after every build when GameDir is set, usually in the

@@ -10,7 +10,10 @@ Read README.md first, then log/MORNING.md for what broke and why. PLAN.md sectio
 - `log/`                playtest notes (MORNING.md is the running log)
 - `tools/remote-box/`   Mac-side helpers for driving a cloud PC by keystrokes
 - `mod/Lockdown.cs`, `mod/LockdownRun.cs` escape lockdown logic and one run's state, free of game types; `mod/LockdownGame.cs` draws it; `mod/lockdown_districts.json` is the district file (placeholder for now, format in `docs/lockdown-districts.md`)
-- `tests/LockdownCheck/` net8 checks for the lockdown logic and Atlas client: `dotnet run --project tests/LockdownCheck`
+- `mod/ForceField.cs` force field logic and colour lookup, free of game types; `mod/ForceFieldGame.cs` draws and pushes; `docs/forcefield-test.md` is the in-game test. The colour comes from `R_lut` only (`T_lut` is baked but unused)
+- `mod/RoadTest.cs` logic and `mod/RoadTestGame.cs` natives for the Debug-only road switching experiment on F4 walls (`docs/forcefield-test.md` section G). The mission doesn't use it
+- `tools/bake_entanglement.py` bakes `recorded/entanglement_lut.bin` from `entanglement-shader-v1`, keeping the raw ZIP beside it. Offline only: the game never calls that engine
+- `tests/LockdownCheck/` net8 checks for the lockdown and force field logic and Atlas client: `dotnet run --project tests/LockdownCheck`
 - `tools/lockdown_probe.py` measures graph-v1 outside the game; `tools/record_lockdowns.py` records `recorded/lockdown_NN.json` and must be rerun when the district file changes
 
 ## Rules
@@ -23,4 +26,4 @@ Read README.md first, then log/MORNING.md for what broke and why. PLAN.md sectio
 - graph-v1 `io` knobs other than seeds fail or are ignored on fake backends. Use the chip ladder instead.
 
 ## Game: GTA V Legacy
-Bought as "GTA V Enhanced" on Steam (includes Legacy). Mod the Legacy build: Script Hook V 1.0.3889.0, ScriptHookVDotNet 3.7.0-nightly.194+ (3.6.0 fails in NativeMemory on this build), LemonUI optional. BattlEye must be off (launcher setting + Steam `-nobattleye`) or GTA5.exe dies with 0xc000009a. The mission starts on foot at the yellow Q blip (`Locations.Default.Start`, Lester's house) with INPUT_CONTEXT (E); F10 aborts; F5-F9 playtest keys (F9 = start from anywhere) only with `Debug = true` in QDay.ini; Insert reloads scripts. Natives used are listed in PLAN.md section 7 and were checked against alloc8or's native DB (SET_RIOT_MODE_ENABLED = 0x2587A48BC88DFADF).
+Bought as "GTA V Enhanced" on Steam (includes Legacy). Mod the Legacy build: Script Hook V 1.0.3889.0, ScriptHookVDotNet 3.7.0-nightly.194+ (3.6.0 fails in NativeMemory on this build), LemonUI optional. BattlEye must be off (launcher setting + Steam `-nobattleye`) or GTA5.exe dies with 0xc000009a. The mission starts on foot at the yellow Q blip (`Locations.Default.Start`, Lester's house) with INPUT_CONTEXT (E); F10 aborts; F3-F9 playtest keys (F3 = road switching test, Shift+F3 stop, Ctrl+F3 read nodes; F4 = force field test wall; F9 = start from anywhere) only with `Debug = true` in QDay.ini; `HideEscapeRoute = true` hides the escape's GPS line, also only with Debug; Insert reloads scripts. Natives used are listed in PLAN.md section 7 and were checked against alloc8or's native DB (SET_RIOT_MODE_ENABLED = 0x2587A48BC88DFADF).
