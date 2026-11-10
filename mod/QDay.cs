@@ -65,7 +65,7 @@ public class QDayScript : Script
     Blip objectiveBlip;                // the current objective
     Blip truckBlip;                    // on the truck during Delivery, hidden while the player is in it
     Prop keypad;
-
+    readonly HackGate hackGate = new(); // FIB Building and Fort Zancudo: the terminal that releases the truck
 
     AtlasResult atlasResult;           // the result that arrived this tick, or null
     AtlasResult lastResult;            // latest Atlas result, shown on the HUD and in the ending
@@ -128,6 +128,7 @@ public class QDayScript : Script
 
     void OnTick(object sender, EventArgs e)
     {
+        Hack.Tick();   // first, so its controls are disabled before anything reads them
         atlasResult = atlas.Take();
         if (atlasResult?.Kind == "lockdown") { lockdown.Store(atlasResult); atlasResult = null; }
         if (atlasResult != null)
@@ -168,6 +169,8 @@ public class QDayScript : Script
         truck = null;
         chipProp = null;
         keypad = null;
+        Hack.Close();
+        hackGate.Clear();
     }
 
     /// <summary>This tick's Atlas result if it is the named job and it succeeded, else null.</summary>
@@ -184,6 +187,13 @@ public class QDayScript : Script
         // objective, F6 fakes the pending Atlas result from the recorded run, F7 jumps straight
         // to Q-Day, F8 drops you in Legion Square, F9 starts the mission from anywhere. All logged so a
         // recording that used them is obvious.
+        // F2 opens the current heist's hack anywhere: Fort Zancudo's during that heist, the FIB Building's otherwise.
+        if (e.KeyCode == Keys.F2 && !Hack.IsOpen)
+        {
+            var level = phase == Phase.Heist && chipIndex == ChipMilitary ? HackLevel.Zancudo : HackLevel.FIB;
+            Log.Write($"DEBUG F2 open hack {level}");
+            Hack.Open(level);
+        }
         if (e.KeyCode == Keys.F9 && phase == Phase.Idle) { Log.Write("DEBUG F9 start"); GoTo(Phase.Pitch); }
         if (e.KeyCode == Keys.F5) DebugTeleport();
         if (e.KeyCode == Keys.F4) LockdownGame.DropTestWall();
@@ -324,6 +334,7 @@ public class QDayScript : Script
     void FailMission(string reason)
     {
         Log.Write("MISSION FAILED: " + reason);
+        Hack.Close();                    // before the waits below, so the player isn't left frozen through them
         // Clear the wanted level now: delivery runs at 3-5 stars and the fade below takes seconds.
         Game.Player.WantedLevel = 0;
         Hud.BigMessage("MISSION FAILED", reason);
@@ -415,6 +426,7 @@ public class QDayScript : Script
 
                     chipProp = World.CreateProp(new("prop_military_pickup_01"), Vector3.Zero, false, false);
                     chipProp.AttachTo(truck, new(0f, -1.6f, 0.9f), new(0f, 0f, 90f));
+                    hackGate.Spawn(HackLevel.FIB, loc.Chips[chipIndex], truck);
                     // TODO: spawn FIB guards around the van
                     break;
                 case ChipMilitary: // Military
@@ -427,6 +439,7 @@ public class QDayScript : Script
 
                     chipProp = World.CreateProp(new("prop_military_pickup_01"), Vector3.Zero, false, false);
                     chipProp.AttachTo(truck, new(0f, -1f, 0.9f), new(0f, 0f, 90f));
+                    hackGate.Spawn(HackLevel.Zancudo, loc.Chips[chipIndex], truck);
                     break;
             }
 
@@ -458,8 +471,9 @@ public class QDayScript : Script
                     break;
                 case ChipFIB: // FIB
                 case ChipMilitary: // Military
-                                   // No blocker, can always reach the truck
-                    heistCanReachTruck = true;
+                                   // Locked until the hack at the terminal is solved (HackGate.cs)
+                    heistCanReachTruck = hackGate.Tick();
+                    truck.LockStatus = heistCanReachTruck ? VehicleLockStatus.Unlocked : VehicleLockStatus.CannotEnter;
                     break;
             }
 
@@ -487,6 +501,7 @@ public class QDayScript : Script
     {
         objectiveBlip?.Delete();
         objectiveBlip = null;
+        hackGate.Clear();
     }
 
     // ---- Delivery: drive the truck home without breaking it -------------------------
@@ -846,6 +861,7 @@ public static class Hud
 {
     public static void Draw(Phase phase, int chip, int logical, double err, double penalty, double threshold, AtlasResult last)
     {
+        if (Hack.IsOpen) return;   // the hack's panel takes the screen; checked here rather than in OnTick to keep that line unchanged
         var errText = double.IsNaN(err) ? "--" : (err * 100).ToString("0.00") + "%";
         var color = double.IsNaN(err) ? Color.White : (err <= threshold ? Color.LimeGreen : Color.OrangeRed);
         new ContainerElement(new PointF(920, 140), new SizeF(340, 92), Color.FromArgb(160, 0, 0, 0)).Draw();
@@ -947,7 +963,7 @@ public static class Hud
 
 public class Locations
 {
-    public class Chip { public string Key, Label, Line; public Vector3 Pos; public int Wanted; }
+    public class Chip { public string Key, Label, Line; public Vector3 Pos; public int Wanted; public Vector3 HackPos; public float HackHeading; }
     public class Site { public string Name; public Vector3 Pos; }
     public Site Start, Lab; public List<Chip> Chips; public Site Ending;
 
@@ -965,8 +981,11 @@ public class Locations
         },
         Chips = [
             new() { Key = "brisbane", Label = "Humane Labs cryostat",       Pos = new(3627.89f, 3754.49f, 28.52f), Wanted = 3, Line = "Biotech cryostat. Noisy as hell, but it is cold." },
-            new() { Key = "torino",   Label = "FIB Building control plane", Pos = new(156.67f, -713.8f, 33.0f),    Wanted = 4, Line = "Government-grade control electronics. They will notice." },
-            new() { Key = "fez",      Label = "Fort Zancudo qubit array",   Pos = new(-2047.0f, 3132.0f, 32.8f),   Wanted = 5, Line = "The real thing. Military. Do not scratch it." },
+            // HackPos and HackHeading are the hack terminal: placeholders 4 m to the right of each truck, which need verifying in game.
+            new() { Key = "torino",   Label = "FIB Building control plane", Pos = new(156.67f, -713.8f, 33.0f),    Wanted = 4, Line = "Government-grade control electronics. They will notice.",
+                    HackPos = new(179.99f, -694.81f, 32.94f), HackHeading = 68.86f },
+            new() { Key = "fez",      Label = "Fort Zancudo qubit array",   Pos = new(-2047.0f, 3132.0f, 32.8f),   Wanted = 5, Line = "The real thing. Military. Do not scratch it.",
+                    HackPos = new(-2043.0f, 3132.0f, 32.8f), HackHeading = 0f },
         ],
         Ending = new()
         {
