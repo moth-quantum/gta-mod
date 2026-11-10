@@ -11,7 +11,7 @@ The quantum computer is real: every error rate on screen comes from an Atlas job
 | Folder | What it is |
 | --- | --- |
 | `mod/` | The mission itself. `QDay.cs` is the game code (C#, ScriptHookVDotNet 3), `Atlas.cs` talks to Atlas over HTTPS on background threads, and `Log.cs` is the logger. `bin/QDay.dll` is the built copy that goes in the game (its NuGet dependencies are merged in). Map positions are hardcoded in `Locations.Default` in `QDay.cs`. |
-| `recorded/` | Real Atlas results saved on 21 Oct 2026. Used when there is no key or Atlas is slow. |
+| `recorded/` | Real Atlas results, embedded in the DLL. Used when there is no key or Atlas is slow. Every `qrng_qpu_64q_*.json` is one recorded Q-Day run on IBM hardware. |
 | `setup/` | How to set up a Windows PC: `WINDOWS_SETUP.md` (start here), plus the two install scripts. |
 | `log/` | Working notes from testing. `MORNING.md` is the running log of what broke and why. |
 | `tools/remote-box/` | Scripts used to drive a cloud PC from a Mac. You won't need these. |
@@ -27,6 +27,18 @@ You need a Windows PC with GTA V Legacy. Follow `setup/WINDOWS_SETUP.md`. The tw
 With `Debug = true`, F2 also opens the current heist's hacking minigame from anywhere.
 
 To change the mission, edit `mod/QDay.cs`, rebuild (`dotnet build` in `mod/`), and copy `mod/bin/QDay.dll` into the game's `scripts` folder.
+
+## How the Q-Day job runs
+The Q-Day job (comet-qrng-v1, 64 qubits on IBM hardware) is sent when the mission starts, at Lester's pitch, and runs in the background through the heists. The threshold is a fixed 10 seconds. If the job is back by then, the riot runs on its random numbers. If not, or with no key, or in offline mode, the mod picks one of the recorded runs in `recorded/` at random and starts reading its numbers from a random point, so the riot and the leak ticker still come from real IBM random numbers and differ between plays. `mod/QDayPrefetch.cs` and `mod/QDayLibrary.cs` hold this logic.
+
+## Recording more Q-Day runs
+`tools/record_qday.py` (Python 3, standard library only) runs one Q-Day job and saves it to `recorded/qrng_qpu_64q_<backend>_<date>_<n>.json`:
+
+```
+MOTH_API_TOKEN=... python3 tools/record_qday.py
+```
+
+It sends the same job as the mod, prints the backend, Atlas and IBM job IDs, time taken and QPU time, and refuses to save a run with fewer than 64 random integers. The key is read from `MOTH_API_TOKEN` and never written to disk. Each run uses Moth's IBM hardware time, so record one at a time. Rebuild the mod afterwards to embed the new file.
 
 ## Rules
 - The Atlas key goes only in the game's `scripts\QDay.ini` (`[Atlas] ApiKey`). Never commit it: the repo's `mod/QDay.ini` keeps it empty. Without a key the mission plays from saved real results.
