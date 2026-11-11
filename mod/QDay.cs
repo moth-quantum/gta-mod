@@ -381,21 +381,41 @@ public partial class QDayScript : Script
         Log.Write("story missions stopped");
     }
 
+    static readonly string[] PitchLines =
+    [
+        "I've been building something in my garage...",
+        "A quantum computer. One that works could open every bank account in Los Santos. Every police file. Every phone.",
+        "Mine doesn't work yet. Too many errors.",
+        "If I get the error rate under 2%, it starts fixing its own mistakes. Then it opens everything.",
+        "All I need is a fridge colder than outer space, a better command system and a better chip. I know where all three are. You in?",
+    ];
+    const double PitchLineSeconds = 3.5;   // between Lester's texts
+    const double PitchCardSeconds = 5;     // the Q-DAY card's subtitle, before the first heist's objective replaces it
+    int pitchLinesSent;
+    bool pitchCardShown;
+
     void BeginPitch()
     {
         StopStoryMissions();
         Log.Write("mission start");
         SendQDayJob();                   // runs through the heists, see QDayPrefetch.cs
-        Screen.ShowSubtitle("~b~Lester:~s~ A machine that only factors numbers. That's all it does.", 6000);
-        Hud.BigMessage("Q-DAY", "build a fault-tolerant quantum computer");
+        pitchLinesSent = 0;
+        pitchCardShown = false;
     }
 
     void TickPitch()
     {
         if (CheckForPlayerDeath()) return;
 
-        if (Elapsed() > 7) GoTo(Phase.Heist);
+        double t = Elapsed();
+        if (pitchLinesSent < PitchLines.Length && t >= pitchLinesSent * PitchLineSeconds) LesterText(PitchLines[pitchLinesSent++]);
+        double cardAt = PitchLines.Length * PitchLineSeconds;
+        if (!pitchCardShown && t >= cardAt) { pitchCardShown = true; Hud.BigMessage("Q-DAY", "build a fault-tolerant quantum computer"); }
+        if (t > cardAt + PitchCardSeconds) GoTo(Phase.Heist);
     }
+
+    /// <summary>One of Lester's lines, as a text on the phone.</summary>
+    static void LesterText(string text) => Notification.Show(NotificationIcon.Lester, "Lester", "Q-Day", text);
 
     // ---- Heist: go to the current chip --------------------------------------------
     void BeginHeist()
@@ -406,7 +426,8 @@ public partial class QDayScript : Script
         objectiveBlip.Color = BlipColor.Yellow;
         objectiveBlip.ShowRoute = true;
         heistSceneSpawned = false;
-        if (!partAttempted) Screen.ShowSubtitle($"~b~Lester:~s~ {chip.Line}", 6000);   // not again on a retry of the same part
+        if (!partAttempted) LesterText(chip.Line);   // not again on a retry of the same part
+        Screen.ShowSubtitle(chip.Objective, 6000);
         Log.Write($"heist {chipIndex} -> {chip.Label} at {chip.Pos}{(partAttempted ? ", retry" : "")}");
         partAttempted = true;
     }
@@ -565,7 +586,7 @@ public partial class QDayScript : Script
         truckBlip.IsFlashing = true;
         truckBlip.FlashInterval = 250;
         truckBlip.FlashTimeLeft = 2000;
-        Screen.ShowSubtitle($"~b~Lester:~s~ Got it. Bring it to me. ~r~Every bump is decoherence.~s~", 6000);
+        LesterText("Got it. Bring it to me. Every bump makes it more error-prone.");
         Log.Write($"pickup {chip.Key}, wanted {chip.Wanted}");
     }
 
@@ -631,7 +652,7 @@ public partial class QDayScript : Script
     {
         var chip = loc.Chips[chipIndex];
         atlas.Calibrate(CalibrationJob, chip.Key);
-        Screen.ShowSubtitle("~b~Lester:~s~ Installing the new part. Let's see where the errors are now.", 5000);
+        LesterText("Installing the new part. Let's see where the errors are now.");
         Log.Write($"delivered {chip.Key}, penalty {damagePenalty:P2}, calibrating");
     }
 
@@ -650,7 +671,7 @@ public partial class QDayScript : Script
         }
     }
 
-    const int ResultBeforeLesterMs = 2500;   // the result title card shows this long before Lester speaks, so neither overwrites the other
+    const int ResultBeforeLesterMs = 2500;   // the result title card shows this long before Lester's text, so the card is read first
     const int LesterBeforeNextMs = 4000;
 
     /// <summary>
@@ -667,9 +688,9 @@ public partial class QDayScript : Script
         bool lastChip = chipIndex == loc.Chips.Count - 1;
         Log.Write($"calibrated {chip.Key}: live {errorRate:P2} + damage {damagePenalty:P2} = {total:P2}, target {Percent(target)}% -> {(clean ? "under the target" : "over the target, same part again")}");
 
-        Hud.BigMessage($"ERROR RATE {total * 100:0.0}%", clean ? $"target under {Percent(target)}%" : $"over the {Percent(target)}% target");
+        Hud.BigMessage($"ERROR RATE {total * 100:0.0}%", !clean ? $"over the {Percent(target)}% target" : lastChip ? $"under {Percent(target)}%" : $"target under {Percent(target)}%");
         Wait(ResultBeforeLesterMs);
-        Screen.ShowSubtitle("~b~Lester:~s~ " + (clean ? PassLine(chip.Key) : "Over the target. That's your driving. Get me another one, and don't damage it."), 6000);
+        LesterText(clean ? PassLine(chip.Key) : "Over the target. That's your driving. Get me another one, and don't damage it.");
         Wait(LesterBeforeNextMs);
 
         if (clean && lastChip) { GoTo(Phase.Threshold); return; }
@@ -719,7 +740,7 @@ public partial class QDayScript : Script
     {
         if (CheckForPlayerDeath()) return;
 
-        if (!thresholdLine && Elapsed() > 3) { thresholdLine = true; Screen.ShowSubtitle("~b~Lester:~s~ It's running.", 6000); }
+        if (!thresholdLine && Elapsed() > 3) { thresholdLine = true; LesterText("It's running."); }
         if (Elapsed() > ThresholdSeconds) StartQDay(ThresholdResult());
     }
 
@@ -750,7 +771,7 @@ public partial class QDayScript : Script
         BuildTicker(r);
         TextureSwap.ReplacementEnabled = true;
         lockdown.Submit(atlas, r);
-        Hud.BigMessage("Q-DAY", $"Bell S = {r.S:0.00} > 2    every key on earth is public");
+        Hud.BigMessage("Q-DAY", $"every key on earth is public    Bell S = {r.S:0.00} > 2");
         Log.Write($"Q-DAY. S={r.S} commit={r.Commit} backend={r.Backend} certified={r.Certified} job={r.JobId} offset={r.Start}");
     }
 
@@ -836,14 +857,11 @@ public partial class QDayScript : Script
         List<string> lines = [.. Chaos.Leaks];
         // shuffle with Atlas bytes
         for (int i = lines.Count - 1; i > 0; i--) { int j = rng.Next(i + 1); (lines[i], lines[j]) = (lines[j], lines[i]); }
-        // A live Atlas result can come back without a commit hash or backend (the
-        // recorded fallback always has both). The null-conditionals used to collapse
-        // to nothing, leaving the headline reading "KEY ... FACTORED ON " with gaps.
+        // A live Atlas result can come back without a commit hash, which would leave a gap in the headline.
         var commit = string.IsNullOrEmpty(r.Commit)
             ? "UNVERIFIED"
             : r.Commit.Substring(0, Math.Min(16, r.Commit.Length)) + "...";
-        var backend = string.IsNullOrEmpty(r.Backend) ? "IBM HARDWARE" : r.Backend.ToUpper();
-        ticker.Add($"KEY {commit} FACTORED ON {backend}");
+        ticker.Add($"KEY {commit} FACTORED");
         ticker.AddRange(lines);
     }
 
@@ -858,7 +876,7 @@ public partial class QDayScript : Script
         objectiveBlip.ShowRoute = !hideEscapeRoute;
         if (hideEscapeRoute) Log.Write("DEBUG escape: route line hidden by HideEscapeRoute, stop blip kept");
         LockdownGame.RaiseForceField(lockdown.Graph, lockdown.Layout);
-        Screen.ShowSubtitle("~b~Lester:~s~ The city's locked down. Get out while there's still a road.", 6000);
+        LesterText("The city's locked down. Get out while there's still a road.");
     }
 
     void TickEscape()
@@ -1066,7 +1084,7 @@ public static class Hud
 
 public class Locations
 {
-    public class Chip { public string Key, Label, Line; public Vector3 Pos; public int Wanted; public Vector3 HackPos; public float HackHeading; }
+    public class Chip { public string Key, Label, Line, Objective; public Vector3 Pos; public int Wanted; public Vector3 HackPos; public float HackHeading; }
     public class Site { public string Name; public Vector3 Pos; }
     public Site Start, Lab; public List<Chip> Chips; public Site Ending;
     // Each part's error-rate target, keyed by Chip.Key. It's kept out of Chip because feature/hack changes those lines; fold it in once that's merged.
@@ -1086,11 +1104,17 @@ public class Locations
             Pos = new(1279.96f, -1733.71f, 53.55f),
         },
         Chips = [
-            new() { Key = "brisbane", Label = "Humane Labs cryostat",       Pos = new(3627.89f, 3754.49f, 28.52f), Wanted = 3, Line = "Biotech cryostat. Noisy as hell, but it is cold." },
+            new() { Key = "brisbane", Label = "Humane Labs cryostat",       Pos = new(3627.89f, 3754.49f, 28.52f), Wanted = 3,
+                    Line = "First, the fridge. The chip only works when it's kept just above absolute zero, and mine isn't cold enough. Every bit of heat causes errors. Humane Labs has what we need... a cryostat.",
+                    Objective = "Steal the ~y~cryostat~s~ from Humane Labs." },
             // HackPos and HackHeading are the hack terminal: placeholders 4 m to the right of each truck, which need verifying in game.
-            new() { Key = "torino",   Label = "FIB Building control plane", Pos = new(156.67f, -713.8f, 33.0f),    Wanted = 4, Line = "Government-grade control electronics. They will notice.",
+            new() { Key = "torino",   Label = "FIB Building control plane", Pos = new(156.67f, -713.8f, 33.0f),    Wanted = 4,
+                    Line = "Next, the command system. It tells the qubits what to do. Mine's too old. Too many errors. I've heard the FIB has a brand new, government-grade one. Get it however you can.",
+                    Objective = "Steal the ~y~command system~s~ from the FIB Building.",
                     HackPos = new(179.99f, -694.81f, 32.94f), HackHeading = 68.86f },
-            new() { Key = "fez",      Label = "Fort Zancudo qubit array",   Pos = new(-2047.0f, 3132.0f, 32.8f),   Wanted = 5, Line = "The real thing. Military. Do not scratch it.",
+            new() { Key = "fez",      Label = "Fort Zancudo qubit array",   Pos = new(-2047.0f, 3132.0f, 32.8f),   Wanted = 5,
+                    Line = "Last one. The chip. The qubits sit on it, and mine's too flawed to hold them steady. Fort Zancudo has a military-grade one. It's called a qubit array. Do whatever it takes, and DON'T DAMAGE IT.",
+                    Objective = "Steal the ~y~qubit array~s~ from Fort Zancudo.",
                     HackPos = new(-2043.0f, 3132.0f, 32.8f), HackHeading = 0f },
         ],
         // Each part has to come in under its own target, which tightens as the machine gets closer. With the recorded

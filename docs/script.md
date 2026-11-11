@@ -47,7 +47,7 @@ The first heist starts straight after (see section 2).
 
 **Status:** the truck, the keypad and the 3-star wanted level are in the game and played. The cryostat line is new and not in the code yet. The guards aren't built: there's only a placeholder for them in `QDay.cs` on Alejandro's branch.
 
-> **Lester:** First, the fridge. The chip only works when it's kept just above absolute zero, and mine isn't cold enough. Every bit of heat causes errors. Humane Labs has the one we need. It's called a cryostat.
+> **Lester:** First, the fridge. The chip only works when it's kept just above absolute zero, and mine isn't cold enough. Every bit of heat causes errors. Humane Labs has what we need... a cryostat.
 
 Objective: *Steal the cryostat from Humane Labs.*
 
