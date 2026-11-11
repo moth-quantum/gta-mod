@@ -30,7 +30,7 @@ public sealed class PhaseCallbacks(Action begin = null, Action tick = null, Acti
     static void Nop() { }
 }
 
-public class QDayScript : Script
+public partial class QDayScript : Script
 {
     const int DefaultChipIndex = ChipFIB;
 
@@ -136,6 +136,7 @@ public class QDayScript : Script
         {
             lastResult = atlasResult;
             Log.Write($"atlas result {atlasResult.Name}: {atlasResult}");
+            CatchQDayResult(atlasResult);   // QDayPrefetch.cs: kept whatever phase we are in
         }
 
         phases[phase].Tick();
@@ -188,7 +189,7 @@ public class QDayScript : Script
         if (e.KeyCode == Keys.F10) { Log.Write("abort"); GoTo(Phase.Idle); }
         if (!debug) return;
         // Playtest shortcuts, only with Debug = true in QDay.ini. F4 drops a force field test wall ahead, F5 teleports to the current
-        // objective, F6 fakes the pending Atlas result from the recorded run, F7 jumps straight
+        // objective, F6 fakes the pending Atlas result (Threshold: a library pick), F7 jumps straight
         // to Q-Day, F8 drops you in Legion Square, F9 starts the mission from anywhere. All logged so a
         // recording that used them is obvious.
         // F2 opens the current heist's hack anywhere: Fort Zancudo's during that heist, the FIB Building's otherwise.
@@ -207,7 +208,7 @@ public class QDayScript : Script
         if (e.KeyCode == Keys.F6)
         {
             if (phase == Phase.Calibrating) { Log.Write("DEBUG F6 in Calibrating: recorded calibration"); FinishCalibration(chipIndex == loc.Chips.Count - 1 ? 0.0173 : 0.085); }
-            else if (phase == Phase.Threshold) { Log.Write("DEBUG F6 in Threshold: recorded qday"); StartQDay(AtlasResult.Recorded()); }
+            else if (phase == Phase.Threshold) { Log.Write("DEBUG F6 in Threshold: recorded qday"); StartQDay(QDayLibrary.Pick()); }
             else if (phase == Phase.QDay) { Log.Write("DEBUG F6 in QDay: skip the riot"); GoTo(Phase.Escape); }
         }
         // T toggles the texture replacement; the SetTexture hook stays installed. Not while the hack is open: it takes typing.
@@ -222,7 +223,7 @@ public class QDayScript : Script
         {
             Log.Write("DEBUG F7 jump to Q-Day");
             if (phase == Phase.Idle) StopStoryMissions();
-            StartQDay(AtlasResult.Recorded());
+            StartQDay(QDayLibrary.Pick());
         }
     }
 
@@ -274,6 +275,7 @@ public class QDayScript : Script
         chipIndex = DefaultChipIndex; logicalQubits = 0; errorRate = double.NaN; damagePenalty = 0;
         lastResult = null; qdayResult = null;
         lockdown.Reset();
+        ResetQDayRun();
         stormStarted = false; armedTotal = 0;
     }
 
@@ -374,6 +376,7 @@ public class QDayScript : Script
     {
         StopStoryMissions();
         Log.Write("mission start");
+        SendQDayJob();                   // runs through the heists, see QDayPrefetch.cs
         Screen.ShowSubtitle("~b~Lester:~s~ A machine that only factors numbers. That's all it does.", 6000);
         Hud.BigMessage("Q-DAY", "build a fault-tolerant quantum computer");
     }
@@ -637,30 +640,32 @@ public class QDayScript : Script
         chipProp = null;
     }
 
-    // ---- Threshold: the Q-Day job runs on IBM hardware, the player waits --------------
+    // ---- Threshold: a fixed ThresholdSeconds; the Q-Day job was sent at the pitch -------
+    bool thresholdLine;
+
     void BeginThreshold()
     {
         Function.Call(Hash.SHAKE_GAMEPLAY_CAM, "SMALL_EXPLOSION_SHAKE", 0.3f);
-        // The storm used to start HERE, then run for the whole IBM queue (up to 900s)
-        // with the player frozen in place. A thunderstorm clears the streets, so by
+        Function.Call(Hash.ANIMPOSTFX_PLAY, "Dont_tazeme_bro", 1500, false);   // short screen flicker
+        // The storm used to start HERE. A thunderstorm clears the streets, so by
         // the time the riot began there was nobody left to arm. It now starts in
         // TickQDay, once peds have actually been armed.
-        atlas.QDay("qday");
-        Hud.BigMessage("THRESHOLD", "factoring RSA-2048 on IBM hardware...");
-        Log.Write("threshold: qpu job requested");
+        Hud.BigMessage("THRESHOLD", "switching on...");
+        thresholdLine = false;
+        Log.Write($"threshold: {ThresholdSeconds}s, {QDayJobName} {(liveQDay != null ? "already back" : "still running")}");
     }
 
     void TickThreshold()
     {
         if (CheckForPlayerDeath()) return;
 
-        // The countdown is the real hardware queue. Nothing to fake here.
-        if (Arrived("qday") is { } r) StartQDay(r);
-        else if (Elapsed() > 180) { Log.Write("qpu timeout, using recorded"); StartQDay(AtlasResult.Recorded()); }
+        if (!thresholdLine && Elapsed() > 3) { thresholdLine = true; Screen.ShowSubtitle("~b~Lester:~s~ It's running.", 6000); }
+        if (Elapsed() > ThresholdSeconds) StartQDay(ThresholdResult());
     }
 
     void EndThreshold()
     {
+        Function.Call(Hash.ANIMPOSTFX_STOP, "Dont_tazeme_bro");
     }
 
     // ---- QDay: every key on earth is public, the city riots --------------------------
@@ -674,7 +679,7 @@ public class QDayScript : Script
     {
         var r = qdayResult;
         lastResult = r;
-        if (r.Ints is { Count: > 0 }) rng = new AtlasRandom(r.Ints);
+        if (r.Ints is { Count: > 0 }) rng = new AtlasRandom(r.Ints, r.Start);
         Function.Call(Hash.ANIMPOSTFX_PLAY, "DeathFailMPIn", 1500, false);
         Function.Call(Hash.SET_CREATE_RANDOM_COPS, false);
         stormStarted = false;
@@ -683,7 +688,7 @@ public class QDayScript : Script
         TextureSwap.ReplacementEnabled = true;
         lockdown.Submit(atlas, r);
         Hud.BigMessage("Q-DAY", $"Bell S = {r.S:0.00} > 2    every key on earth is public");
-        Log.Write($"Q-DAY. S={r.S} commit={r.Commit} backend={r.Backend} certified={r.Certified}");
+        Log.Write($"Q-DAY. S={r.S} commit={r.Commit} backend={r.Backend} certified={r.Certified} job={r.JobId} offset={r.Start}");
     }
 
     DateTime lastArm = DateTime.MinValue;
@@ -826,7 +831,7 @@ public class QDayScript : Script
         {
             var r = lastResult;
             Hud.BigMessage("POST-QUANTUM CRYPTOGRAPHY", "was available the whole time");
-            Notification.Show($"Randomness certified on {r?.Backend ?? "IBM hardware"} via Moth Atlas. Job {r?.JobId}.");
+            Notification.Show($"Random numbers generated on {r?.Backend ?? "IBM hardware"} via Moth Atlas. Job {r?.JobId}.");
         }
         if (Elapsed() > 12) { Screen.FadeIn(2000); GoTo(Phase.Idle); }
     }
@@ -836,7 +841,8 @@ public class QDayScript : Script
 public class AtlasRandom : Random
 {
     readonly List<int> bytes; int pos;
-    public AtlasRandom(List<int> b) : base(0) { bytes = b; }
+    // start: where to begin reading. 0 for live runs; library picks start at a random point.
+    public AtlasRandom(List<int> b, int start = 0) : base(0) { bytes = b; pos = start; }
     public override int Next(int max) { if (max <= 0) return 0; var v = bytes[pos++ % bytes.Count]; return v % max; }
     public override int Next() => bytes[pos++ % bytes.Count];
 }
@@ -882,7 +888,7 @@ public static class Hud
         new TextElement($"logical qubits  {logical} / 3", new PointF(930, 168), 0.38f, Color.White, Font.ChaletLondon, Alignment.Left).Draw();
         new TextElement($"error rate  {errText}  penalty {penalty:P2}  threshold {threshold * 100:0}%", new PointF(930, 190), 0.38f, color, Font.ChaletLondon, Alignment.Left).Draw();
         if (phase == Phase.Calibrating || phase == Phase.Threshold)
-            new TextElement(phase == Phase.Threshold ? "IBM hardware queue..." : "calibrating on Atlas...", new PointF(930, 212), 0.34f, Color.LightBlue, Font.ChaletLondon, Alignment.Left).Draw();
+            new TextElement(phase == Phase.Threshold ? "switching on..." : "calibrating on Atlas...", new PointF(930, 212), 0.34f, Color.LightBlue, Font.ChaletLondon, Alignment.Left).Draw();
     }
 
     // ---- the leak ticker ------------------------------------------------

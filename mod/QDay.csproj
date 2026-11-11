@@ -36,8 +36,9 @@
   </ItemGroup>
 
   <ItemGroup>
-    <!-- Offline mode answers from these real Atlas results, so they ship inside the DLL. -->
-    <EmbeddedResource Include="..\recorded\graph_fake_*.json;..\recorded\qrng_qpu_64q_marrakesh.json;..\recorded\lockdown_*.json;..\recorded\entanglement_lut.bin;lockdown_districts.json" LogicalName="recorded.%(Filename)%(Extension)" />
+    <!-- Offline mode answers from these real Atlas results, so they ship inside the DLL.
+         Every qrng_qpu_64q_*.json is a Q-Day run in QDayLibrary; the 12q no-bytes file stays out. -->
+    <EmbeddedResource Include="..\recorded\graph_fake_*.json;..\recorded\qrng_qpu_64q_*.json;..\recorded\lockdown_*.json;..\recorded\entanglement_lut.bin;lockdown_districts.json" LogicalName="recorded.%(Filename)%(Extension)" />
     <!-- Replacement textures for TextureSwap, read with TextureSwap.GetEmbeddedTexture. -->
     <EmbeddedResource Include="..\recorded\qday_textures_mild\*.dds" LogicalName="textures.%(Filename)%(Extension)" />
   </ItemGroup>

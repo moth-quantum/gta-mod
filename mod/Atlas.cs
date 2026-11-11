@@ -4,8 +4,8 @@
 //
 // Live:    [Atlas] ApiKey in scripts\QDay.ini.
 // Offline: no key, or [Atlas] Offline = true. Answers from the real job results
-//          captured 2026-10-21 (../recorded, embedded in the DLL), so the mod plays
-//          without an Atlas account.
+//          in ../recorded (embedded in the DLL), so the mod plays without an Atlas
+//          account. The Q-Day job answers with a random pick from QDayLibrary.
 
 using System;
 using System.Collections.Concurrent;
@@ -32,6 +32,7 @@ public class AtlasResult
     public List<int> Ints;
     public List<Measurement> Measurements;   // lockdown only: graph-v1's candidate layouts
     public bool FromBank;                    // lockdown only: a recorded job, not this run's targets
+    public int Start;                        // where AtlasRandom starts reading Ints: 0 for live runs, random for library picks
 
     public override string ToString() => Status == "error"
         ? $"{Kind} error: {Message}"
@@ -39,18 +40,6 @@ public class AtlasResult
             ? $"lockdown simulation {Status} backend={Backend} candidates={Measurements?.Count ?? 0} bank={FromBank} job={JobId}"
             : $"{Kind} {Status} backend={Backend} error_rate={ErrorRate} S={S} certified={Certified} job={JobId}";
 
-    public static AtlasResult Recorded() => new()
-    {
-        Name = "qday",
-        Status = "done",
-        Kind = "qday",
-        S = 2.711,
-        Commit = "40bb90660f941c13f6ccc0d1998adfce33daa061d50459b0719ad999c93352f2",
-        Backend = "ibm_marrakesh",
-        JobId = RecordedQDayJob,
-        Certified = true,
-        Grade = "hardware-accounted",
-    };
 }
 
 public sealed class Atlas : IDisposable
@@ -145,8 +134,14 @@ public sealed class Atlas : IDisposable
 
     AtlasResult DoQDay()
     {
-        var jobId = AtlasResult.RecordedQDayJob;
-        var o = Offline ? RecordedOutput("qrng_qpu_64q_marrakesh.json") : RunJob("comet-qrng-v1", QDayParams(), 3600, out jobId);
+        if (Offline) return QDayLibrary.Pick();
+        var o = RunJob("comet-qrng-v1", QDayParams(), 3600, out var jobId);
+        return ParseQDay(o, jobId);
+    }
+
+    /// <summary>A comet-qrng-v1 result.output as an AtlasResult. Live runs and the recorded library both go through here.</summary>
+    internal static AtlasResult ParseQDay(JsonNode o, string jobId)
+    {
         var bw = o["bell_witness"];
         AtlasResult r = new()
         {
@@ -269,6 +264,6 @@ public sealed class Atlas : IDisposable
         return JsonNode.Parse(s)?["result"]?["output"] ?? throw new InvalidDataException($"{file}: no result.output");
     }
 
-    static string Str(JsonNode n) => n?.GetValueKind() == JsonValueKind.String ? n.GetValue<string>() : null;
+    internal static string Str(JsonNode n) => n?.GetValueKind() == JsonValueKind.String ? n.GetValue<string>() : null;
     static double Num(JsonNode n) => n?.GetValueKind() == JsonValueKind.Number ? n.GetValue<double>() : double.NaN;
 }
