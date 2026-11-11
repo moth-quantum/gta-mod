@@ -16,7 +16,7 @@ public sealed class HackGate
     const float UseRadius = 1.5f;                       // metres, measured flat, from the terminal
     const float UseHeight = 2f;                         // and no more than this above or below it
     const string Objective = "Hack the ~y~terminal~s~ to release the truck.";
-    const string HelpText = "Press ~INPUT_CONTEXT~ to hack the terminal";
+    const string HelpText = "Press ~INPUT_CONTEXT~ to hack the terminal.";
     const string SuccessSound = "Hack_Success", SuccessSoundSet = "DLC_HEIST_BIOLAB_PREP_HACKING_SOUNDS";   // name unconfirmed
     static readonly Color MarkerColor = Color.FromArgb(150, 255, 205, 0);
 
