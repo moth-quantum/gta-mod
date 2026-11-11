@@ -21,8 +21,9 @@ public enum HackLevel { FIB, Zancudo }
 public static class Hack
 {
     // ---- difficulty ----------------------------------------------------------------
-    const int FibRows = 3, FibCols = 3, FibFlips = 1, FibSeconds = 0;              // 0 = no timer
-    const int ZancudoRows = 4, ZancudoCols = 4, ZancudoFlips = 2, ZancudoSeconds = 60;
+    const int FibRows = 4, FibCols = 4, FibFlips = 2, FibSeconds = 90;                 // 0 = no timer
+    const int ZancudoRows = 5, ZancudoCols = 5, ZancudoFlips = 3, ZancudoSeconds = 60;
+    const int FibNewErrorSeconds = 0, ZancudoNewErrorSeconds = 15;                     // a qubit flips by itself this often; 0 = never
 
     /// <summary>Fort Zancudo puts its own wanted level on the player, who can't move while hacking.</summary>
     public const bool HackInvulnerable = true;
@@ -32,29 +33,34 @@ public static class Hack
 
     // ---- text, exactly as specified --------------------------------------------------
     const string Title = "FIX THE ERRORS";
-    const string Instruction = "A red light means two neighbours disagree. Find the flipped qubits and flip them back.";
+    const string Instruction = "A red light means two neighbours disagree  :  Find the flipped qubits and flip them back";
     const string SuccessText = "SYSTEM OPEN";
+    // Placeholders from the 11 Nov visual pass, to be confirmed against docs/script.md.
+    const string FibSite = "FIB BUILDING : : FLOOR 49 : : SECURE TERMINAL";
+    const string ZancudoSite = "FORT ZANCUDO : : HANGAR 2 : : SECURE TERMINAL";
+    const string BreachText = "BREACH", LinkText = "LINK OK", NewErrorText = "NEW ERROR";
+    const string LitText = "RED LIGHTS", FlipsText = "FLIPS", RescrambleText = "RESCRAMBLE", NoTimerText = "NO TIMER";
 
     // ---- layout on SHVDN's 1280 x 720 canvas -----------------------------------------
+    // Only rectangles, alpha, text and time. Vertical rhythm: a header, then even BigGap spaces between
+    // blocks, SmallGap inside a block, Foot at the bottom.
     const float CanvasW = 1280f, CanvasH = 720f;
-    const float PanelW = 700f;
-    const float Cell = 52f;            // a qubit square
-    const float Gap = 26f;             // between squares, where the checks sit
-    const float CursorBorder = 4f;
-    const float MarkSize = 14f;
-    const float CheckInset = 4f;       // a check stops short of the squares at each end
-    const float LitThickness = 10f;    // lit checks are thicker as well as red, so colour isn't the only cue
-    const float DimThickness = 4f;
-    const float GridTop = 100f;        // from the top of the panel
-    const float BelowGrid = 74f;
+    const float PanelW = 780f;
+    const float Head = 36f, BigGap = 32f, SmallGap = 14f, TitlePx = 34f, InstrPx = 13f, Row = 30f, Foot = 28f;
+    const float GridLine = 24f;        // the faint background grid
+    const float OpenMs = 220f;         // the panel grows from a line
+    const float TextPxPerScale = 40f;  // GTA text scale 1.0 is roughly this many px tall on the 720 canvas; check in game
 
-    static readonly Color PanelColor = Color.FromArgb(200, 0, 0, 0);
-    static readonly Color QubitColor = Color.FromArgb(255, 205, 205, 210);
-    static readonly Color CursorColor = Color.FromArgb(255, 255, 205, 0);
-    static readonly Color MarkColor = Color.FromArgb(255, 25, 25, 35);
-    static readonly Color LitColor = Color.FromArgb(255, 255, 45, 45);
-    static readonly Color DimColor = Color.FromArgb(255, 70, 70, 70);
-    static readonly Color SuccessColor = Color.FromArgb(255, 90, 230, 120);
+    static readonly Color Accent = Color.FromArgb(80, 220, 255);
+    static readonly Color Red = Color.FromArgb(255, 50, 60);
+    static readonly Color Green = Color.FromArgb(90, 240, 140);
+    static readonly Color Yellow = Color.FromArgb(255, 205, 0);
+    static readonly Color Amber = Color.FromArgb(255, 150, 40);
+    static readonly Color Pale = Color.FromArgb(200, 220, 230);
+    static readonly Color QubitFill = Color.FromArgb(18, 30, 40);
+    static readonly Color QubitEdge = Color.FromArgb(150, 200, 220);
+    static readonly Color QuietCheck = Color.FromArgb(90, 120, 135);
+    static readonly Color PanelFill = Color.FromArgb(235, 5, 10, 16);
 
     // GTA's own button prompts. The D-pad group number is from R*'s input group list and needs confirming in game.
     const int InputGroupFrontendDpadAll = 6;
@@ -62,7 +68,8 @@ public static class Hack
     static readonly Random rng = new();
     static HackPuzzle puzzle;
     static HackLevel level;
-    static int cursor, flips, openedAt, timerStart, solvedAt = -1;
+    static int cursor, flips, openedAt, timerStart, errorAt, lastNewError = -1, solvedAt = -1;
+    static readonly int[] flashAt = new int[64], newErrorAt = new int[64];   // per qubit, game time of the last flip / new error
     static Entity frozen;
     static bool wasInvincible;
     static Scaleform buttons;
@@ -82,8 +89,10 @@ public static class Hack
         NewLayout();
         cursor = 0;
         flips = 0;
-        openedAt = timerStart = Game.GameTime;
-        solvedAt = -1;
+        openedAt = timerStart = errorAt = Game.GameTime;
+        solvedAt = lastNewError = -1;
+        Array.Clear(flashAt, 0, flashAt.Length);
+        Array.Clear(newErrorAt, 0, newErrorAt.Length);
 
         var ped = Game.Player.Character;
         frozen = ped.IsInVehicle() ? ped.CurrentVehicle : ped;
@@ -146,8 +155,24 @@ public static class Hack
         if (Seconds > 0 && now - timerStart >= Seconds * 1000)
         {
             NewLayout();
-            timerStart = now;
+            timerStart = errorAt = now;
+            Array.Clear(newErrorAt, 0, newErrorAt.Length);
             Log.Write($"hack {level}: timer ran out, new layout {puzzle.LayoutText}");
+        }
+
+        if (NewErrorSeconds > 0 && now - errorAt >= NewErrorSeconds * 1000)
+        {
+            int i = rng.Next(puzzle.Count);
+            puzzle.Disturb(i);
+            errorAt = lastNewError = newErrorAt[i] = now;
+            Log.Write($"hack {level}: new error on qubit {i}, {puzzle.LitCount} checks lit");
+            if (puzzle.IsSolved)   // it flipped back one of the errors and nothing else was left
+            {
+                solvedAt = now;
+                Log.Write($"hack {level}: solved by a new error in {(now - openedAt) / 1000.0:0.0} s with {flips} flips");
+                Draw(now);
+                return;
+            }
         }
 
         if (now - openedAt >= InputGuardMs && !HandleInput(now)) return;
@@ -158,6 +183,7 @@ public static class Hack
     static int Cols => level == HackLevel.FIB ? FibCols : ZancudoCols;
     static int Flips => level == HackLevel.FIB ? FibFlips : ZancudoFlips;
     static int Seconds => level == HackLevel.FIB ? FibSeconds : ZancudoSeconds;
+    static int NewErrorSeconds => level == HackLevel.FIB ? FibNewErrorSeconds : ZancudoNewErrorSeconds;
 
     // A fresh layout also clears the player's marks, since they belong to the old one.
     static void NewLayout() => puzzle = HackPuzzle.Generate(Rows, Cols, Flips, rng);
@@ -176,6 +202,7 @@ public static class Hack
         {
             puzzle.Flip(cursor);
             flips++;
+            flashAt[cursor] = now;
             Log.Write($"hack {level}: flip {cursor}, {puzzle.LitCount} checks lit");
             if (puzzle.IsSolved)
             {
@@ -195,51 +222,159 @@ public static class Hack
     // ---- drawing -------------------------------------------------------------------
     static void Draw(int now)
     {
-        float gridW = puzzle.Cols * Cell + (puzzle.Cols - 1) * Gap;
-        float gridH = puzzle.Rows * Cell + (puzzle.Rows - 1) * Gap;
-        float panelH = GridTop + gridH + BelowGrid;
-        float panelX = (CanvasW - PanelW) / 2, panelY = (CanvasH - panelH) / 2;
-        float gridX = (CanvasW - gridW) / 2, gridY = panelY + GridTop;
-        float centre = CanvasW / 2;
+        bool solved = solvedAt >= 0;
+        int rows = puzzle.Rows, cols = puzzle.Cols;
+        bool big = rows >= 5;                          // 5 x 5 a little smaller, to clear the button bar
+        float cell = big ? 48f : 56f, gap = big ? 24f : 30f;
+        float gridW = cols * cell + (cols - 1) * gap, gridH = rows * cell + (rows - 1) * gap;
+        float titleOff = Head + BigGap, instrOff = titleOff + TitlePx + SmallGap, gridOff = instrOff + InstrPx + BigGap;
+        float h = gridOff + gridH + BigGap + 1 + SmallGap + Row + Foot;
+        float x = (CanvasW - PanelW) / 2, y = (CanvasH - h) / 2, centre = CanvasW / 2;
+        var accent = solved ? Green : Accent;
 
-        Box(panelX, panelY, PanelW, panelH, PanelColor);
-        Text(Title, centre, panelY + 14, 0.6f, Color.White);
-        Text(Instruction, centre, panelY + 60, 0.32f, Color.White);
+        // open: dim the world, grow the panel from a line
+        float open = Math.Min(1f, (now - openedAt) / OpenMs);
+        Box(0, 0, CanvasW, CanvasH, Color.FromArgb((int)(115 * open), 0, 8, 14));
+        float ph = h * open, py = y + (h - ph) / 2;
+        Box(x, py, PanelW, ph, PanelFill);
+        for (float gy = py; gy < py + ph; gy += GridLine) Box(x, gy, PanelW, 1, A(accent, 0.035f));
+        for (float gx = x; gx < x + PanelW; gx += GridLine) Box(gx, py, 1, ph, A(accent, 0.035f));
+        Frame(x, py, PanelW, ph, 1, A(accent, 0.35f));
+        Brackets(x - 4, py - 4, PanelW + 8, ph + 8, 22, 3, A(accent, 0.9f));
+        if (open < 1f) return;
 
+        // header strip
+        Box(x + 1, y + 1, PanelW - 2, Head - 2, A(accent, 0.09f));
+        Box(x + 1, y + Head - 1, PanelW - 2, 1, A(accent, 0.25f));
+        Text(level == HackLevel.FIB ? FibSite : ZancudoSite, x + 16, y + (Head - 13) / 2, 13, A(accent, 0.9f), Alignment.Left);
+        bool blink = now / 500 % 2 == 0;
+        Box(x + PanelW - 120, y + (Head - 9) / 2, 9, 9, A(solved ? Green : Red, blink ? 1f : 0.3f));
+        Text(solved ? LinkText : BreachText, x + PanelW - 104, y + (Head - 13) / 2, 13, A(accent, 0.9f), Alignment.Left);
+        if (!solved && lastNewError >= 0 && now - lastNewError < 1500)
+            Text(NewErrorText, x + PanelW - 140, y + (Head - 13) / 2, 13, Amber, Alignment.Right);
+
+        // title, with a short red and cyan glitch every few seconds
+        float ty = y + titleOff;
+        if (!solved && now % 3200 < 140)
+        {
+            Text(Title, centre - 3, ty, TitlePx, A(Red, 0.7f), Alignment.Center);
+            Text(Title, centre + 3, ty, TitlePx, A(Accent, 0.7f), Alignment.Center);
+        }
+        Text(Title, centre, ty, TitlePx, Color.White, Alignment.Center);
+        Text(Instruction, centre, y + instrOff, InstrPx, A(Pale, 0.75f), Alignment.Center);
+
+        // checks between neighbours
+        float gx0 = (CanvasW - gridW) / 2, gy0 = y + gridOff;
+        float pulse = 0.65f + 0.35f * (float)Math.Sin(now / 140.0);
         foreach (var (a, b) in puzzle.Checks())
         {
             bool lit = puzzle.IsCheckLit(a, b);
-            float t = lit ? LitThickness : DimThickness;
-            var color = lit ? LitColor : DimColor;
-            float ax = gridX + a % puzzle.Cols * (Cell + Gap), ay = gridY + a / puzzle.Cols * (Cell + Gap);
-            if (b == a + 1) Box(ax + Cell + CheckInset, ay + (Cell - t) / 2, Gap - 2 * CheckInset, t, color);   // to the right
-            else Box(ax + (Cell - t) / 2, ay + Cell + CheckInset, t, Gap - 2 * CheckInset, color);              // below
+            float ax = gx0 + a % cols * (cell + gap), ay = gy0 + a / cols * (cell + gap);
+            bool right = b == a + 1;
+            float bx = right ? ax + cell + 4 : ax + cell / 2, by = right ? ay + cell / 2 : ay + cell + 4, len = gap - 8;
+            if (lit)
+            {
+                if (right) Glow(bx, by - 3, len, 6, Red, pulse, 3);
+                else Glow(bx - 3, by, 6, len, Red, pulse, 3);
+            }
+            else
+            {
+                var c = solved ? A(Green, 0.7f) : A(QuietCheck, 0.55f);
+                if (right) Box(bx, by - 1, len, 2, c);
+                else Box(bx - 1, by, 2, len, c);
+            }
         }
 
+        // qubits
         for (int i = 0; i < puzzle.Count; i++)
         {
-            float x = gridX + i % puzzle.Cols * (Cell + Gap), y = gridY + i / puzzle.Cols * (Cell + Gap);
-            if (i == cursor && solvedAt < 0) Box(x - CursorBorder, y - CursorBorder, Cell + 2 * CursorBorder, Cell + 2 * CursorBorder, CursorColor);
-            Box(x, y, Cell, Cell, QubitColor);
-            if (puzzle.PlayerMarks[i]) Box(x + (Cell - MarkSize) / 2, y + (Cell - MarkSize) / 2, MarkSize, MarkSize, MarkColor);
+            float qx = gx0 + i % cols * (cell + gap), qy = gy0 + i / cols * (cell + gap);
+            float wave = solved ? Clamp01((now - solvedAt - (i % cols + i / cols) * 70) / 200f) : 0f;   // green sweeps across on success
+            Box(qx, qy, cell, cell, solved ? A(Green, 0.10f + 0.25f * wave) : QubitFill);
+            Frame(qx, qy, cell, cell, 2, solved ? A(Green, 0.4f + 0.6f * wave) : A(QubitEdge, 0.55f));
+            Text($"q{i}", qx + 5, qy + 4, 10, A(QubitEdge, 0.5f), Alignment.Left);
+            if (puzzle.PlayerMarks[i]) Glow(qx + cell / 2 - 8, qy + cell / 2 - 8, 16, 16, solved ? Green : Accent, 1f, 3);
+            float ne = newErrorAt[i] > 0 ? 1f - (now - newErrorAt[i]) / 900f : 0f;
+            if (ne > 0)
+            {
+                Frame(qx - 3, qy - 3, cell + 6, cell + 6, 3, A(Amber, ne));
+                Box(qx, qy, cell, cell, A(Amber, 0.35f * ne));
+            }
+            float fl = flashAt[i] > 0 ? 1f - (now - flashAt[i]) / 220f : 0f;
+            if (fl > 0) Box(qx, qy, cell, cell, A(Color.White, 0.7f * fl));
+            if (i == cursor && !solved)
+            {
+                float o = 5 + 2 * (float)Math.Sin(now / 160.0);
+                Brackets(qx - o, qy - o, cell + 2 * o, cell + 2 * o, 12, 3, Yellow);
+            }
         }
 
-        float statusY = gridY + gridH + 18;
-        if (solvedAt >= 0) Text(SuccessText, centre, statusY, 0.7f, SuccessColor);
-        else if (Seconds > 0)
+        // status row
+        float divY = gy0 + gridH + BigGap, sy = divY + 1 + SmallGap;
+        Box(x + 24, divY, PanelW - 48, 1, A(accent, 0.25f));
+        if (solved)
         {
-            int left = Math.Max(0, Seconds - (now - timerStart) / 1000);
-            Text($"{left / 60}:{left % 60:00}", centre, statusY, 0.5f, left <= 10 ? LitColor : Color.White);
+            int typed = Math.Min(SuccessText.Length, (now - solvedAt) / 60);
+            Text(SuccessText.Substring(0, typed) + (blink ? "_" : ""), centre, sy, 30, Green, Alignment.Center);
+        }
+        else
+        {
+            int lit = puzzle.LitCount;
+            Text($"{LitText} {lit}", x + 24, sy + (Row - 15) / 2, 15, lit > 0 ? Red : Green, Alignment.Left);
+            Text($"{FlipsText} {flips}", x + PanelW - 24, sy + (Row - 15) / 2, 15, A(Pale, 0.8f), Alignment.Right);
+            if (Seconds > 0)
+            {
+                int leftMs = Math.Max(0, Seconds * 1000 - (now - timerStart)), secs = (leftMs + 999) / 1000;
+                float frac = leftMs / (Seconds * 1000f), bw = 300, bx = centre - bw / 2;
+                bool warn = secs <= 10;
+                Box(bx, sy + 4, bw, 6, A(Color.White, 0.08f));
+                Glow(bx, sy + 4, bw * frac, 6, warn ? Red : Accent, warn ? pulse : 0.9f, 2);
+                Text($"{secs / 60}:{secs % 60:00}  {RescrambleText}", centre, sy + 17, 12, warn ? Red : A(Pale, 0.7f), Alignment.Center);
+            }
+            else Text(NoTimerText, centre, sy + (Row - 12) / 2, 12, A(Pale, 0.45f), Alignment.Center);
         }
 
-        if (solvedAt < 0) DrawButtons();
+        // scanlines and a slow sweep, over the panel only
+        for (float s = y; s < y + h; s += 3) Box(x, s, PanelW, 1, Color.FromArgb(46, 0, 0, 0));
+        float sweep = y + now / 9 % (h + 60) - 60;
+        float top = Math.Max(y, sweep);
+        Box(x, top, PanelW, Math.Max(0, Math.Min(sweep + 60, y + h) - top), A(accent, 0.03f));
+        if (solved && now - solvedAt < 160) Box(0, 0, CanvasW, CanvasH, A(Green, 0.25f * (1 - (now - solvedAt) / 160f)));
+
+        if (!solved) DrawButtons();
     }
 
-    static void Box(float x, float y, float w, float h, Color color) =>
-        new ContainerElement(new PointF(x, y), new SizeF(w, h), color).Draw();
+    static float Clamp01(float v) => v < 0 ? 0 : v > 1 ? 1 : v;
 
-    static void Text(string s, float x, float y, float scale, Color color) =>
-        new TextElement(s, new PointF(x, y), scale, color, Font.ChaletLondon, Alignment.Center).Draw();
+    static Color A(Color c, float alpha) => Color.FromArgb((int)(255 * Clamp01(alpha)), c.R, c.G, c.B);
+
+    static void Box(float x, float y, float w, float h, Color color)
+    {
+        if (w <= 0 || h <= 0 || color.A == 0) return;
+        new ContainerElement(new PointF(x, y), new SizeF(w, h), color).Draw();
+    }
+
+    static void Frame(float x, float y, float w, float h, float t, Color c)
+    {
+        Box(x, y, w, t, c); Box(x, y + h - t, w, t, c); Box(x, y, t, h, c); Box(x + w - t, y, t, h, c);
+    }
+
+    static void Brackets(float x, float y, float w, float h, float len, float t, Color c)
+    {
+        Box(x, y, len, t, c); Box(x, y, t, len, c); Box(x + w - len, y, len, t, c); Box(x + w - t, y, t, len, c);
+        Box(x, y + h - t, len, t, c); Box(x, y + h - len, t, len, c); Box(x + w - len, y + h - t, len, t, c); Box(x + w - t, y + h - len, t, len, c);
+    }
+
+    // A glow is three wider rectangles at falling alpha under the bar itself.
+    static void Glow(float x, float y, float w, float h, Color c, float alpha, float spread)
+    {
+        for (int k = 3; k >= 1; k--) Box(x - k * spread, y - k * spread, w + 2 * k * spread, h + 2 * k * spread, A(c, alpha * 0.12f * (4 - k)));
+        Box(x, y, w, h, A(c, alpha));
+    }
+
+    // Text sizes are given in canvas pixels (as in the preview) and turned into GTA's text scale.
+    static void Text(string s, float x, float y, float px, Color color, Alignment align) =>
+        new TextElement(s, new PointF(x, y), px / TextPxPerScale, color, Font.Monospace, align).Draw();
 
     // GTA's prompt bar in the bottom right, rebuilt each frame so it follows a switch between keyboard and pad.
     // Slot 0 is drawn rightmost, so this reads move, flip, quit from left to right.

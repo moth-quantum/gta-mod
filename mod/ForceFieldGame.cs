@@ -5,7 +5,11 @@
 // Blips and looped particles outlive the script, so Clear has to run on every way out.
 //
 // Unverified until seen in game: the particle name and whether it takes a tint, DRAW_POLY on rotated
-// quads, and whether velocity holds a ped. docs/forcefield-test.md covers each.
+// quads, and whether velocity holds a ped. docs/forcefield-test.md covers each. Also unverified (11 Nov
+// visual pass): DRAW_TEXTURED_POLY_WITH_THREE_COLOURS over the centre texel of PlainTxd/PlainTexture
+// (assumed close to white). 1,536 calls for one wall crashed the game (about 1,400 a frame is the
+// limit), so it's now 288 calls a wall, the nearest 4 walls only, and never more than 1,200 a frame. If the
+// texture dictionary doesn't stream in, the walls fall back to flat DRAW_POLY cells without the light.
 
 using System;
 using System.Collections.Generic;
@@ -48,6 +52,16 @@ public static class ForceFieldGame
     static readonly List<Site> sites = [];
     static readonly ParticleEffectAsset asset = new(ParticleAsset);
     static readonly EntanglementTable table = LoadTable();
+    static readonly LightField light = LoadLight();
+
+    // The plain texture under the per-corner colours. Rockstar draws the Deadline trails with this native
+    // and this dictionary; every corner reads the centre texel, so it acts as one flat colour. Change both
+    // here if that texel turns out not to be white.
+    const string PlainTxd = "deadline", PlainTexture = "deadline_trail_01";
+    const float PlainU = 0.5f, PlainV = 0.5f;
+    const int PlainTimeoutMs = 10000;
+    static int plainRequestedAt = -1;
+    static bool plainReady, plainGaveUp;
     static int nextRagdoll, nextPushLog;
     static bool particleFailureLogged;
 
@@ -87,6 +101,12 @@ public static class ForceFieldGame
     /// <summary>Removes every wall, blip and particle. Safe to call with nothing up.</summary>
     public static void Clear()
     {
+        if (plainRequestedAt >= 0)
+        {
+            Function.Call(Hash.SET_STREAMED_TEXTURE_DICT_AS_NO_LONGER_NEEDED, PlainTxd);
+            plainRequestedAt = -1;
+            plainReady = false;
+        }
         RoadTestGame.Clear();   // before the check below, and on every way out that clears the walls
         if (sites.Count == 0) return;
         foreach (var site in sites) Remove(site);
@@ -160,7 +180,17 @@ public static class ForceFieldGame
         var pos = mover.Position;
         var vel = mover.Velocity;
         var cam = Function.Call<Vector3>(Hash.GET_FINAL_RENDERED_CAM_COORD);
-        float thickness = ForceField.Thickness(Game.GameTime / 1000.0);
+
+        // Only the nearest MaxDrawnWalls walls in range are drawn, and never more than MaxDrawCallsPerFrame calls.
+        drawn.Clear();
+        foreach (var site in sites)
+        {
+            float d = pos.DistanceTo2D(new Vector3(site.Segment.CentreX, site.Segment.CentreY, 0f));
+            if (d <= ForceField.CheckRadius) drawn.Add((d, site));
+        }
+        drawn.Sort((a, b) => a.dist.CompareTo(b.dist));
+        if (drawn.Count > ForceField.MaxDrawnWalls) drawn.RemoveRange(ForceField.MaxDrawnWalls, drawn.Count - ForceField.MaxDrawnWalls);
+        callsThisFrame = 0;
 
         foreach (var site in sites)
         {
@@ -176,11 +206,12 @@ public static class ForceFieldGame
             var result = ForceField.Step(site.Segment, site.Track, inVehicle ? ForceField.Vehicle : ForceField.OnFoot, pos.X, pos.Y, pos.Z, vel.X, vel.Y);
             if (result.Kind != PushKind.None) Apply(result, ped, mover, inVehicle, ref pos, ref vel);
 
-            if (table != null)
+            if (table != null && drawn.Exists(e => e.site == site))
             {
-                var middle = Draw(site, cam, thickness);
+                var middle = Draw(site, cam);
                 UpdateParticles(site, middle);
             }
+            else StopParticles(site);   // not drawn this tick, so no crackle on an invisible wall
         }
     }
 
@@ -209,32 +240,146 @@ public static class ForceFieldGame
         mover.Velocity = vel;
     }
 
-    // Eight strips across the wall, each with the colour for its own view angle. DRAW_POLY shows one
-    // side only, so each strip is drawn in both windings, 32 triangles a wall. Returns the middle strip's colour.
-    static Color Draw(Site site, Vector3 cam, float thickness)
+    /// <summary>The embedded QPAM light frames, or null with the reason logged: the walls are then drawn without the light.</summary>
+    static LightField LoadLight()
+    {
+        try
+        {
+            var frames = new byte[ForceField.LightFrames][];
+            int size = 0;
+            for (int f = 0; f < frames.Length; f++)
+            {
+                using var s = typeof(ForceFieldGame).Assembly.GetManifestResourceStream($"forcefield.light_{f}.png")
+                              ?? throw new FileNotFoundException($"no embedded light_{f}.png");
+                using var bmp = new Bitmap(s);
+                if (f == 0) size = bmp.Width;
+                if (bmp.Width != size || bmp.Height != size) throw new InvalidDataException($"light_{f}.png is {bmp.Width} x {bmp.Height}, expected {size} x {size}");
+                var px = new byte[size * size];
+                for (int y = 0; y < size; y++)
+                    for (int x = 0; x < size; x++)
+                        px[y * size + x] = bmp.GetPixel(x, y).R;
+                frames[f] = px;
+            }
+            var field = new LightField(frames, size, ForceField.LightCell);
+            Log.Write($"forcefield: QPAM light loaded, {field.Frames} frames of {size} x {size}");
+            return field;
+        }
+        catch (Exception e)
+        {
+            Log.Write($"forcefield: no QPAM light, walls drawn without it: {e.Message}");
+            return null;
+        }
+    }
+
+    /// <summary>Streams the plain texture in, once per set of walls; after PlainTimeoutMs without it, falls back for good.</summary>
+    static bool PlainTextureReady()
+    {
+        if (plainReady) return true;
+        if (plainGaveUp) return false;
+        int now = Game.GameTime;
+        if (plainRequestedAt < 0) plainRequestedAt = now;
+        Function.Call(Hash.REQUEST_STREAMED_TEXTURE_DICT, PlainTxd, false);
+        if (Function.Call<bool>(Hash.HAS_STREAMED_TEXTURE_DICT_LOADED, PlainTxd))
+        {
+            plainReady = true;
+            Log.Write($"forcefield: {PlainTxd} streamed in, drawing smooth per-corner colours with the QPAM light");
+            return true;
+        }
+        if (now - plainRequestedAt > PlainTimeoutMs)
+        {
+            plainGaveUp = true;
+            Log.Write($"forcefield: {PlainTxd} didn't stream in within {PlainTimeoutMs / 1000} s, drawing flat cells without the light");
+        }
+        return false;
+    }
+
+    // One grid corner: where it is, and its colour (0 to 255) and alpha with the light applied.
+    struct Corner
+    {
+        public float X, Y, Z, R, G, B;
+        public int A;
+    }
+
+    static readonly Corner[,] corners = new Corner[ForceField.Cols + 1, ForceField.Rows + 1];
+    static readonly List<(float dist, Site site)> drawn = [];
+    static int callsThisFrame;
+
+    // One layer of Cols x Rows cells. Colour (for the view angle and film thickness), haze and the QPAM
+    // light are worked out at every grid corner and blended across each triangle by the three-colour
+    // native, so the wall has no facets. Without the plain texture, each triangle is drawn flat in its
+    // corners' average colour, without the light. A triangle shows one side only, so each is drawn in
+    // both windings: CallsPerWall calls. Returns the colour at the bottom middle of the wall.
+    static Color Draw(Site site, Vector3 cam)
     {
         var s = site.Segment;
-        float bottom = s.Z, top = s.Z + ForceField.WallHeight, midZ = (bottom + top) / 2;
+        bool smooth = PlainTextureReady() && light != null;
+        double seconds = Game.GameTime / 1000.0;
+        int frame = ForceField.LightFrame(Game.GameTime);
+        float rise = (float)(ForceField.LightRise * seconds % ForceField.LightTileMetres);
+        float width = s.Width, height = ForceField.WallHeight;
         Color middle = default;
-        for (int i = 0; i < ForceField.Strips; i++)
-        {
-            float f0 = (float)i / ForceField.Strips, f1 = (float)(i + 1) / ForceField.Strips, fm = (f0 + f1) / 2;
-            float cos = ForceField.ViewCos(s, s.PointX(fm), s.PointY(fm), midZ, cam.X, cam.Y, cam.Z);
-            var (cr, cg, cb) = table.Colour(cos, thickness);
-            int r = (int)Math.Round(cr * 255), g = (int)Math.Round(cg * 255), b = (int)Math.Round(cb * 255);
-            if (i == ForceField.Strips / 2) middle = Color.FromArgb(ForceField.WallAlpha, r, g, b);
+        for (int i = 0; i <= ForceField.Cols; i++)
+            for (int j = 0; j <= ForceField.Rows; j++)
+            {
+                float f = (float)i / ForceField.Cols, z = height * j / ForceField.Rows, along = (f - 0.5f) * width;
+                float px = s.PointX(f), py = s.PointY(f);
+                float cos = ForceField.ViewCos(s, px, py, s.Z + z, cam.X, cam.Y, cam.Z);
+                var (cr, cg, cb) = table.Colour(cos, ForceField.ThicknessAt(seconds, along, z));
+                int alpha = (int)Math.Round(ForceField.BaseAlpha * ForceField.Haze(along, z, height, width));
+                if (smooth)
+                {
+                    // u along the wall and v up it, in tiles; the image's v runs down.
+                    float lit = light.Sample(frame, along / ForceField.LightTileMetres, -(z - rise) / ForceField.LightTileMetres);
+                    cr = ForceField.Lit(cr, lit);
+                    cg = ForceField.Lit(cg, lit);
+                    cb = ForceField.Lit(cb, lit);
+                    alpha = ForceField.LitAlpha(alpha, lit);
+                }
+                corners[i, j] = new Corner { X = px, Y = py, Z = s.Z + z, R = (float)(cr * 255), G = (float)(cg * 255), B = (float)(cb * 255), A = Math.Min(255, alpha) };
+                if (i == ForceField.Cols / 2 && j == 0)
+                    middle = Color.FromArgb(Math.Min(255, alpha), Byte(cr * 255), Byte(cg * 255), Byte(cb * 255));
+            }
 
-            float x0 = s.PointX(f0), y0 = s.PointY(f0), x1 = s.PointX(f1), y1 = s.PointY(f1);
-            Triangle(x0, y0, bottom, x1, y1, bottom, x1, y1, top, r, g, b);
-            Triangle(x0, y0, bottom, x1, y1, top, x0, y0, top, r, g, b);
-            Triangle(x1, y1, top, x1, y1, bottom, x0, y0, bottom, r, g, b);
-            Triangle(x0, y0, top, x1, y1, top, x0, y0, bottom, r, g, b);
-        }
+        for (int i = 0; i < ForceField.Cols; i++)
+            for (int j = 0; j < ForceField.Rows; j++)
+            {
+                // lower-right (i,j)(i+1,j)(i+1,j+1), then upper-left (i,j)(i+1,j+1)(i,j+1)
+                Triangle(corners[i, j], corners[i + 1, j], corners[i + 1, j + 1], smooth);
+                Triangle(corners[i, j], corners[i + 1, j + 1], corners[i, j + 1], smooth);
+            }
         return middle;
     }
 
-    static void Triangle(float x1, float y1, float z1, float x2, float y2, float z2, float x3, float y3, float z3, int r, int g, int b) =>
-        Function.Call(Hash.DRAW_POLY, x1, y1, z1, x2, y2, z2, x3, y3, z3, r, g, b, ForceField.WallAlpha);
+    static void Triangle(in Corner a, in Corner b, in Corner c, bool smooth)
+    {
+        if (a.A < 2 && b.A < 2 && c.A < 2) return;
+        if (callsThisFrame + 2 > ForceField.MaxDrawCallsPerFrame) return;   // the hard stop: the game crashes past ~1,400
+        callsThisFrame += 2;
+        if (smooth)
+        {
+            Smooth(a, b, c);
+            Smooth(c, b, a);
+        }
+        else
+        {
+            int r = Byte((a.R + b.R + c.R) / 3), g = Byte((a.G + b.G + c.G) / 3), bl = Byte((a.B + b.B + c.B) / 3), al = (a.A + b.A + c.A) / 3;
+            Poly(a.X, a.Y, a.Z, b.X, b.Y, b.Z, c.X, c.Y, c.Z, r, g, bl, al);
+            Poly(c.X, c.Y, c.Z, b.X, b.Y, b.Z, a.X, a.Y, a.Z, r, g, bl, al);
+        }
+    }
+
+    // The native takes each corner's R, G and B as floats (cast to int inside) and its alpha as an int.
+    static void Smooth(in Corner a, in Corner b, in Corner c) =>
+        Function.Call(Hash.DRAW_TEXTURED_POLY_WITH_THREE_COLOURS,
+                      a.X, a.Y, a.Z, b.X, b.Y, b.Z, c.X, c.Y, c.Z,
+                      a.R, a.G, a.B, a.A, b.R, b.G, b.B, b.A, c.R, c.G, c.B, c.A,
+                      PlainTxd, PlainTexture,
+                      PlainU, PlainV, 1f, PlainU, PlainV, 1f, PlainU, PlainV, 1f);
+
+    static int Byte(double v) => v <= 0 ? 0 : v >= 255 ? 255 : (int)Math.Round(v);
+
+    static void Poly(float x1, float y1, float z1, float x2, float y2, float z2, float x3, float y3, float z3, int r, int g, int b, int a) =>
+        Function.Call(Hash.DRAW_POLY, x1, y1, z1, x2, y2, z2, x3, y3, z3, r, g, b, a);
 
     static void UpdateBlip(Site site, float dist)
     {
