@@ -369,11 +369,20 @@ static class Program
         Check(run.Layout.JobId != "stale-job", "a result from an earlier run is ignored");
         Check(run.Layout.TargetSource == "recorded bank", "with no result in hand the escape uses the bank");
 
-        // Recorded() has no numbers: F6, F7 and the 180 s hardware timeout all come through here.
-        run.Submit(atlas, AtlasResult.Recorded());
-        Check(run.JobName == null, "the recorded Q-Day result sends no job");
+        // A Q-Day result with no numbers sends no job and the escape uses the bank.
+        run.Submit(atlas, new() { Name = "qday", Kind = "qday", Status = "done", Certified = false, Backend = "ibm_marrakesh" });
+        Check(run.JobName == null, "a Q-Day result with no numbers sends no job");
         run.Begin();
-        Check(run.Layout.TargetSource == "recorded bank" && run.Layout.JobId != null && run.Layout.Rank > 0, "the recorded Q-Day result goes to the bank");
+        Check(run.Layout.TargetSource == "recorded bank" && run.Layout.JobId != null && run.Layout.Rank > 0, "a Q-Day result with no numbers goes to the bank");
+
+        // A library pick (F6, F7 and the hardware timeout) carries a recorded run's numbers, so it sends a job like a live result.
+        var pick = QDayLibrary.Pick();
+        Check(pick.Ints is { Count: > 0 } && pick.Start >= 0 && pick.Start < pick.Ints.Count, "a library pick has numbers and an offset inside them");
+        run.Submit(atlas, pick);
+        Check(run.JobName != null, "a library pick sends a lockdown job");
+        run.Store(Live(run.JobName));
+        run.Begin();
+        Check(run.Layout.TargetSource == $"Q-Day numbers from {pick.Backend}", "a library pick names its recorded hardware");
 
         // A failed job goes to the bank too.
         run.Submit(atlas, Certified());

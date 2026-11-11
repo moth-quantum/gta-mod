@@ -345,7 +345,7 @@ public static class Lockdown
         List<string> lines =
         [
             $"lockdown simulation: backend={l.Backend} job={l.JobId} targets={l.TargetSource}",
-            $"lockdown layout {l.Rank} of {l.Candidates}, p={l.Probability:P2}, bitstring {l.Bitstring ?? "none"}, sealed {l.SealedCount} of {g.Links.Count}, breach={l.Breach}",
+            $"lockdown layout {l.Rank} of {l.Candidates}, p={(l.Probability * 100).ToString("0.00", System.Globalization.CultureInfo.InvariantCulture)}%, bitstring {l.Bitstring ?? "none"}, sealed {l.SealedCount} of {g.Links.Count}, breach={l.Breach}",
         ];
         if (l.Rank == 0) lines.Add("lockdown: the engine returned no usable bitstring, every border stays open");
         else if (l.SealedCount < MinSealedFraction * g.Links.Count) lines.Add($"lockdown: only {l.SealedCount} borders sealed, below the {MinSealedFraction:P0} floor");

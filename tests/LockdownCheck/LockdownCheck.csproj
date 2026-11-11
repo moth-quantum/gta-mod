@@ -21,7 +21,8 @@
     <Compile Include="..\..\mod\ForceField.cs" Link="ForceField.cs" />
     <Compile Include="..\..\mod\RoadTest.cs" Link="RoadTest.cs" />
     <Compile Include="..\..\mod\Atlas.cs" Link="Atlas.cs" />
-    <EmbeddedResource Include="..\..\recorded\lockdown_*.json;..\..\recorded\entanglement_lut.bin;..\..\mod\lockdown_districts.json" LogicalName="recorded.%(Filename)%(Extension)" />
+    <Compile Include="..\..\mod\QDayLibrary.cs" Link="QDayLibrary.cs" />
+    <EmbeddedResource Include="..\..\recorded\lockdown_*.json;..\..\recorded\qrng_qpu_64q_*.json;..\..\recorded\entanglement_lut.bin;..\..\mod\lockdown_districts.json" LogicalName="recorded.%(Filename)%(Extension)" />
   </ItemGroup>
 
 </Project>
