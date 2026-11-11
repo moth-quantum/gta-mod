@@ -498,6 +498,11 @@ public partial class QDayScript : Script
                                    // Locked until the hack at the terminal is solved (HackGate.cs)
                     heistCanReachTruck = hackGate.Tick();
                     truck.LockStatus = heistCanReachTruck ? VehicleLockStatus.Unlocked : VehicleLockStatus.CannotEnter;
+
+                    if (chipIndex == ChipMilitary)
+                    {
+                      DisableTanks();
+                    }
                     break;
             }
 
@@ -522,6 +527,17 @@ public partial class QDayScript : Script
         // Only collisions should count as damage, so the truck ignores gunfire. Fire, explosions and crashes still
         // damage it, so a destroyed truck still fails the mission. Tyres are left as they are.
         truck.IsBulletProof = true;
+    }
+
+    void DisableTanks()
+    {
+        // Prevent tanks at Zancudo from shooting the truck
+        var tankWeapon = Game.GenerateHash("VEHICLE_WEAPON_TANK");
+        foreach (var v in World.GetAllVehicles(["rhino"]))
+        {
+            Function.Call(Hash.DISABLE_VEHICLE_WEAPON, true, tankWeapon, v, v.Driver);
+        }
+        Function.Call(Hash.REMOVE_ALL_PROJECTILES_OF_TYPE, tankWeapon, false);
     }
 
     void EndHeist()
@@ -577,7 +593,9 @@ public partial class QDayScript : Script
                 Function.Call(Hash.SET_STATE_OF_CLOSEST_DOOR_OF_TYPE, Game.GenerateHash("v_ilev_bl_shutter2"), 3620.84f, 3751.53f, 27.7f, /* locked */ false, 1.0, false);
                 break;
             case ChipFIB: // FIB
+                break;
             case ChipMilitary: // Military
+                DisableTanks();
                 break;
         }
 
