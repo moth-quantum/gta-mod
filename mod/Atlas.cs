@@ -132,6 +132,9 @@ public sealed class Atlas : IDisposable
         return new() { Backend = Str(o["backend"]), ErrorRate = Math.Round(ErrorRate(o), 4), JobId = jobId };
     }
 
+    /// <summary>A part's recorded graph-v1 error rate, read straight away on the calling thread: the fallback when a live calibration times out, and F6.</summary>
+    public static double RecordedErrorRate(string chip) => Math.Round(ErrorRate(RecordedOutput($"graph_fake_{chip}.json")), 4);
+
     AtlasResult DoQDay()
     {
         if (Offline) return QDayLibrary.Pick();

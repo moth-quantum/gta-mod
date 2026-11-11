@@ -103,6 +103,8 @@ The tasks follow the real steps to fault tolerance, so the mission is also a tin
    - **The leak ticker.** A news crawl at the bottom of the screen: "SFPD internal mail public." "Caligula's vault PIN: 0000." "Every Grove Street text message, live." Written to be funny and specific to the game's own characters.
 7. **Ending.** Survive five minutes, or drive to one place. Fade out on a title: "Post-quantum cryptography was available the whole time." Credits: built with Claude Code.
 
+Per-part targets, as built on 10 Nov: the three deliveries are three parts of one machine, a fridge (cryostat, Humane Labs), a command system (control electronics, FIB Building) and a chip (qubit array, Fort Zancudo). Each part has to come in under its own target, 11%, 6% and 2%, set in `Locations.Targets`, where the total is the part's live Atlas figure plus the damage penalty. A part over its target sends the player back for the same part, without Lester's opening line again, and a pass moves on to the next part or, after the chip, to Threshold. The HUD shows `part n / 3` and the part's target. Only collisions count as damage, as the truck is bulletproof from the moment it spawns (`Entity.IsBulletProof`), while fire, explosions and crashes still damage it and a destroyed truck still fails the mission. With the recorded error rates, the drive back can lose about 500 body health with the fridge, 280 with the command system and 54 with the chip. If a live calibration takes over 180 s, and for F6 in Calibrating, the mod uses that part's recorded graph-v1 result and logs it.
+
 ### What each beat needs technically (GTA V Legacy, ScriptHookVDotNet 3, C#)
 
 Natives confirmed against alloc8or's native DB on 21 Oct:
