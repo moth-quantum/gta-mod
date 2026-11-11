@@ -13,6 +13,7 @@ Read README.md first, then log/MORNING.md for what broke and why. PLAN.md sectio
 - `mod/ForceField.cs` force field logic and colour lookup, free of game types; `mod/ForceFieldGame.cs` draws and pushes; `docs/forcefield-test.md` is the in-game test. The colour comes from `R_lut` only (`T_lut` is baked but unused)
 - `mod/RoadTest.cs` logic and `mod/RoadTestGame.cs` natives for the Debug-only road switching experiment on F4 walls (`docs/forcefield-test.md` section G). The mission doesn't use it
 - `tools/bake_entanglement.py` bakes `recorded/entanglement_lut.bin` from `entanglement-shader-v1`, keeping the raw ZIP beside it. Offline only: the game never calls that engine
+- `tools/bake_qpam_light.py` bakes the force field's QPAM light, `recorded/forcefield_light/light_0..7.png`, on Qiskit Aer (needs qiskit and qiskit-aer). Offline only; the DLL embeds the PNGs and the light is carried by the triangles' corner colours, as GTA single player can't make a texture from a file
 - `tests/LockdownCheck/` net8 checks for the lockdown and force field logic and Atlas client: `dotnet run --project tests/LockdownCheck`
 - `tools/lockdown_probe.py` measures graph-v1 outside the game; `tools/record_lockdowns.py` records `recorded/lockdown_NN.json` and must be rerun when the district file changes (`--districts FILE --out DIR` records another file's bank elsewhere). `recorded/lockdown_NN.json` is the bank for the generated file
 

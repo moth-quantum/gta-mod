@@ -357,6 +357,12 @@ static class ForceFieldChecks
         catch (Exception e) when (e is InvalidDataException or NullReferenceException or InvalidOperationException or System.Text.Json.JsonException or ArgumentException) { return true; }
     }
 
+    static bool Throws(Action a)
+    {
+        try { a(); return false; }
+        catch (ArgumentException) { return true; }
+    }
+
     static void Table()
     {
         // One value everywhere reads back as itself, at any angle and thickness.
@@ -406,6 +412,31 @@ static class ForceFieldChecks
 
         Check(Enumerable.Range(0, 2000).All(i => ForceField.Thickness(i * 0.05) is >= 450f and <= 550f), "the shimmer stays within 50 nm of the shader's default");
         Check(ForceField.Thickness(0) != ForceField.Thickness(2), "the shimmer moves");
+
+        // The 11 Nov look: swirl across the wall, haze that fades up and at the ends, light texture frames.
+        var swirl = Enumerable.Range(0, 4000).Select(i => ForceField.ThicknessAt(i * 0.05, (i % 69) / 2f - 17, (i % 13) / 2f)).ToArray();
+        Check(swirl.All(t => t is >= 395f and <= 605f), "the swirl stays within 105 nm of the shader's default");
+        Check(ForceField.ThicknessAt(1, -10, 1) != ForceField.ThicknessAt(1, 10, 1), "the swirl varies across the wall");
+        Check(Near(ForceField.Haze(0, 0, 6, 34), 1), "the haze is full at the road in the middle");
+        Check(Near(ForceField.Haze(0, 6, 6, 34), 0), "the haze is gone at the top");
+        Check(Near(ForceField.Haze(17, 0, 6, 34), 0) && Near(ForceField.Haze(-17, 0, 6, 34), 0), "the haze is gone at both ends");
+        Check(ForceField.Haze(0, 1, 6, 34) > ForceField.Haze(0, 3, 6, 34), "the haze thins going up");
+        Check(Enumerable.Range(0, 100).All(i => ForceField.LightFrame(i * 97) is >= 0 and < ForceField.LightFrames), "the light frame is always a real frame");
+        Check(ForceField.LightFrame(0) != ForceField.LightFrame(ForceField.LightFrameMs), "the light frame changes every step");
+        Check(ForceField.LightFrame(int.MaxValue) is >= 0 and < ForceField.LightFrames, "the light frame survives game time wrapping");
+
+        // The light field: averaging, wrap-around and the colour and alpha it gives.
+        var dark = new byte[16]; var bright = Enumerable.Repeat((byte)255, 16).ToArray();
+        var half = new byte[16]; for (int i = 0; i < 16; i++) half[i] = (byte)(i % 4 < 2 ? 255 : 0);   // left half lit
+        var lf = new LightField([dark, bright, half], 4, 2);
+        Check(lf.Frames == 3, "three light frames");
+        Check(Near(lf.Sample(0, 0.3, 0.7), 0) && Near(lf.Sample(1, 0.3, 0.7), 1), "a dark frame is 0 and a lit one 1");
+        Check(Near(lf.Sample(1, 0.25, 0.25), lf.Sample(1, 5.25, -2.75)), "the light wraps round in both directions");
+        Check(Near(lf.Sample(2, 0.25, 0.5), 1) && Near(lf.Sample(2, 0.75, 0.5), 0), "averaged squares keep the lit half lit");
+        Check(Near(lf.Sample(4, 0.3, 0.7), lf.Sample(1, 0.3, 0.7)), "the frame number wraps too");
+        Check(Throws(() => new LightField([new byte[15]], 4, 2)), "a light frame of the wrong size is refused");
+        Check(Near(ForceField.Lit(0.5, 0), 0.5) && ForceField.Lit(0.2, 0.5f) > 0.2 && ForceField.Lit(0.5, 1) == 1, "light brightens a colour and caps it at 1");
+        Check(ForceField.LitAlpha(170, 0) < ForceField.LitAlpha(170, 1) && ForceField.LitAlpha(255, 1) == 255, "light thickens the haze, capped at 255");
 
         var s = ForceField.Segment(At(0, 0, 0, 0));
         Check(Near(ForceField.ViewCos(s, 0, 0, 3, 0, -50, 3), 1), "looking square at a wall is head-on");

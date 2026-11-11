@@ -6,6 +6,8 @@ The maths has been tested outside the game with `tests/LockdownCheck`: turning a
 
 The wall colour comes from `R_lut` only, a table baked once from `entanglement-shader-v1` (job `576f2916-8968-4404-bfe4-97ccdd96141a`, peaked settings) and embedded in the DLL. `T_lut` is baked too, but nothing reads it, so the alpha is a fixed value. The shimmer is the shader's film thickness drifting 50 nm either way over 8 seconds, so every colour on screen is a table lookup and the game makes no engine calls. `docs/swatch_B_peaked.png` shows what the table gives across angle and phase: colour bands that turn close to white at grazing angles.
 
+The look was redone in the 11 Nov visual pass. Each wall is two layers, the wall and a lower, fainter one 0.8 m in front on your side, each a grid of 24 by 8 cells. Colour, haze and light are worked out at every grid corner and blended across each triangle with `DRAW_TEXTURED_POLY_WITH_THREE_COLOURS`, so the wall is a smooth veil with no strips. The haze is strongest at the road and fades towards the top and both ends. The film thickness also varies across the wall in two slow waves, so the colours swirl. Over it is a QPAM light: 8 frames baked once on Qiskit Aer by `tools/bake_qpam_light.py` (a caustic pattern through QPAM, RX 0.3 pi, 2000 shots) and embedded in the DLL, tiled every 4 m, changing 4 times a second and drifting upwards, which brightens and thickens the wall where it falls. The three-colour native needs a texture underneath: it uses the centre of `deadline_trail_01` from the `deadline` dictionary, which Rockstar draws its Deadline trails with. If that dictionary doesn't stream in within 10 seconds, the walls fall back to flat `DRAW_POLY` cells without the light.
+
 The placeholder district file has walls at the midpoints between districts rather than on roads, at rough heights, and they only push when the player is between 2 m below and 6 m above the wall's height, so most tests use the F4 test wall instead. F4 makes a wall in the same way as a real one, so a problem with it is a real problem. Placeholder walls floating or letting you through because of their height aren't failures.
 
 ## Setup
@@ -17,8 +19,8 @@ Build `mod/`, copy `bin/QDay.dll` to `scripts\`, set `Debug = true` in `QDay.ini
 1. **Log:** the first tick after loading logs `forcefield: colour from R_lut only, engine entanglement-shader-v1 job 576f2916-8968-4404-bfe4-97ccdd96141a params {...}`, with no `table refused`.
 2. **Across the road, not along it:** drive along a straight road, press F4, and the wall should lie across the road, square to your direction of travel. This is the check on how `heading` is read (the direction the road runs, GTA's convention), and if the wall runs along the road instead, the fix is in `ForceField.Segment` and nowhere else. Try it on a road running each way, as a wrong sign can look right at some headings.
 3. **Standing on the road:** it starts at road level and reaches about 6 m, on flat ground and on a hill.
-4. **Both sides:** the wall is visible from the front and from behind. `DRAW_POLY` only shows one side, so each strip is drawn twice.
-5. **Rotated walls:** the native DB warns of oddities in some orientations, so check for missing or broken strips, or flicker, on walls at several headings.
+4. **Both sides:** the wall is visible from the front and from behind. A triangle only shows one side, so each is drawn twice.
+5. **Rotated walls:** the native DB warns of oddities in some orientations, so check for missing or broken triangles, or flicker, on walls at several headings.
 
 ## B. Push-back
 
@@ -34,7 +36,10 @@ Build `mod/`, copy `bin/QDay.dll` to `scripts\`, set `Debug = true` in `QDay.ini
 ## C. Colour and particles
 
 14. **Colour with angle:** walk or drive slowly round a test wall. The colours change across the wall and with the angle you're at, and go nearly white when viewed almost edge-on, as in the swatch. They're pastel to medium rather than saturated.
-15. **Shimmer:** standing still and looking square at the wall, the colours drift slowly over about 8 seconds. It's subtler at grazing angles, which is expected.
+15. **Shimmer:** standing still and looking square at the wall, the colours drift and swirl slowly. It's subtler at grazing angles, which is expected.
+15a. **Smooth and lit:** the log shows `forcefield: QPAM light loaded, 8 frames of 256 x 256` and `forcefield: deadline streamed in, drawing smooth per-corner colours with the QPAM light`. The wall should be a smooth, bright veil with wisps of light flickering and drifting upwards, no visible triangles, fading out at the top and the ends. If it looks tinted or dark overall, the centre of `deadline_trail_01` isn't white: try another texture in `PlainTxd` / `PlainTexture` / `PlainU` / `PlainV` in `ForceFieldGame.cs`. If the log says it fell back, say so.
+15b. **Day and night:** check the brightness at midday and at night. It was tuned on a stand-in scene, so it may be too faint by day or too strong at night; `BaseAlpha` and `ForceField.Lit` / `LitAlpha` set it.
+15c. **Frame rate:** a wall in range is up to 1,536 triangles. Stand where three or four walls are in view and compare the frame rate with them and without them (F4 test walls are enough).
 16. **Particles:** three looped effects along each wall, using `core` / `ent_amb_elec_crackle`. None of this has been seen in game, so please check that they show, keep running rather than firing once, and sit along the wall. The log shows `could not start particle` if the game refuses them.
 17. **Tint:** the particles should follow the wall's colour, but the native DB says tinting only works on some effects. If it doesn't work here, try `ent_amb_sparking_wires`, `ent_amb_vent_haze_lg` or `ent_amb_foundry_heat_haze`, also in `core`, by changing the `ParticleName` constant in `ForceFieldGame.cs`, and say which looked best.
 

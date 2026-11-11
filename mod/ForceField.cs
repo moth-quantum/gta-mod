@@ -3,7 +3,8 @@
 // mod/ForceFieldGame.cs does the drawing, physics, particles and blips.
 //
 // The colour comes from R_lut only, a table from entanglement-shader-v1 baked by
-// tools/bake_entanglement.py. T_lut is baked too, but nothing reads it.
+// tools/bake_entanglement.py. T_lut is baked too, but nothing reads it. The light texture over it is
+// QPAM on Aer, baked by tools/bake_qpam_light.py into recorded/forcefield_light/.
 
 using System;
 using System.IO;
@@ -65,12 +66,34 @@ public static class ForceField
     public const float CheckRadius = 150f;   // draw and check inside this
     public const float BlipRadius = 300f;    // minimap blip inside this
 
-    public const int Strips = 8;             // DRAW_POLY is one colour per triangle, so a wall needs strips to show bands
-    public const int WallAlpha = 150;        // fixed; T_lut would make the walls nearly opaque
+    // The look (11 Nov visual pass): a grid of cells, each two triangles with their own colour, so the
+    // colour shifts smoothly across the wall; a haze that fades out towards the top and both ends; a
+    // second, lower, fainter layer just in front on the viewer's side; and the QPAM light texture.
+    public const int Cols = 24, Rows = 8;        // per layer; DRAW_POLY is one colour per triangle
+    public const int BaseAlpha = 170;            // at the road, mid-wall, before the light texture
+    public const float HazeFalloff = 0.9f;       // haze = (1 - height share) ^ this; under 1 keeps the top half visible
+    public const float EndFade = 0.15f;          // share of the width that fades out at each end
+    public const float FrontOffset = 0.8f;       // metres, the second layer in front of the wall
+    public const float FrontHeight = 4.5f;       // metres
+    public const float FrontAlpha = 0.45f;       // share of the main layer's alpha
+    public const float FrontThickness = 30f;     // nm added, so the layers differ in colour
 
     public const float ThicknessCentre = 500f;   // nm, the shader's default
-    public const float ThicknessDrift = 50f;     // nm either way
+    public const float ThicknessDrift = 40f;     // nm either way, over time
     public const float ShimmerSeconds = 8f;      // one full drift
+    public const float SwirlA = 45f, SwirlB = 20f;   // nm, the two waves that vary thickness across the wall
+
+    public const float LightTileMetres = 4f;     // one light texture tile covers this much wall
+    public const int LightFrames = 8;
+    public const int LightFrameMs = 250;
+    public const float LightRise = 0.35f;        // m/s the light drifts upwards
+    public const int LightCell = 4;              // the light is averaged over 4 x 4 pixel squares before sampling
+
+    /// <summary>A colour channel (0 to 1) under light L, as in the approved preview: brighter where the light is, with a glow.</summary>
+    public static double Lit(double channel, float light) => Math.Min(1, channel * (1.0 + 1.6 * light) + 0.6 * light * light);
+
+    /// <summary>The alpha under light L: the light thickens the haze where it falls. Capped at 255.</summary>
+    public static int LitAlpha(int alpha, float light) => Math.Min(255, (int)Math.Round(alpha * 1.55 * (0.5 + 0.9 * light)));
 
     public static readonly Mover Vehicle = new(6f, 5f, 1.5f, 6f);
     public static readonly Mover OnFoot = new(1.5f, 1.5f, 0.5f, 3f);
@@ -180,6 +203,69 @@ public static class ForceField
     /// <summary>The shimmer: thin-film thickness drifting slowly, so every colour is still a lookup in the table.</summary>
     public static float Thickness(double seconds) =>
         ThicknessCentre + ThicknessDrift * (float)Math.Sin(2 * Math.PI * (seconds % ShimmerSeconds) / ShimmerSeconds);
+
+    /// <summary>The shimmer plus two slow waves across the wall, so neighbouring cells differ a little and the colours swirl.
+    /// along is metres from the wall's centre, z metres above the road.</summary>
+    public static float ThicknessAt(double seconds, float along, float z) =>
+        Thickness(seconds)
+        + SwirlA * (float)Math.Sin(0.33 * along + 0.5 * z + 2 * Math.PI * seconds / 5)
+        + SwirlB * (float)Math.Sin(-0.21 * along + 0.9 * z - 2 * Math.PI * seconds / 7);
+
+    /// <summary>The haze, 0 to 1: strongest at the road in the middle, nothing at the top or past the ends.</summary>
+    public static float Haze(float along, float z, float height, float width)
+    {
+        if (height <= 0 || width <= 0) return 0;
+        float h = (float)Math.Pow(Math.Max(0f, 1 - z / height), HazeFalloff);
+        float e = Math.Min(1f, Math.Max(0f, (width / 2 - Math.Abs(along)) / (EndFade * width)));
+        return h * e * e * (3 - 2 * e);
+    }
+
+    /// <summary>Which light texture frame to show at this game time.</summary>
+    public static int LightFrame(int gameTimeMs) => (int)((uint)gameTimeMs / LightFrameMs % LightFrames);
+}
+
+/// <summary>
+/// The QPAM light frames, from tools/bake_qpam_light.py, as numbers from 0 to 1. Sampled with wrap-around,
+/// so a frame tiles across the wall. One value is read per triangle: GTA single player can't make a
+/// texture from a file, so the light is carried by the triangles' colour and alpha instead.
+/// </summary>
+public sealed class LightField
+{
+    readonly float[][] frames;
+    readonly int size;
+
+    /// <summary>pixels[f] is frame f, size x size bytes, row by row, top row first. Each frame is averaged over cell x cell squares.</summary>
+    public LightField(byte[][] pixels, int size, int cell)
+    {
+        if (pixels == null || pixels.Length == 0) throw new ArgumentException("no light frames");
+        if (size <= 0 || cell <= 0 || size % cell != 0) throw new ArgumentException("the frame size must be a multiple of the cell");
+        this.size = size / cell;
+        frames = new float[pixels.Length][];
+        for (int f = 0; f < pixels.Length; f++)
+        {
+            if (pixels[f] == null || pixels[f].Length != size * size) throw new ArgumentException($"light frame {f} isn't {size} x {size}");
+            var avg = new float[this.size * this.size];
+            for (int y = 0; y < size; y++)
+                for (int x = 0; x < size; x++)
+                    avg[y / cell * this.size + x / cell] += pixels[f][y * size + x];
+            for (int i = 0; i < avg.Length; i++) avg[i] /= 255f * cell * cell;
+            frames[f] = avg;
+        }
+    }
+
+    public int Frames => frames.Length;
+
+    /// <summary>The light at (u, v) in tiles, bilinear, wrapping both ways. v = 0 is the top of the image.</summary>
+    public float Sample(int frame, double u, double v)
+    {
+        var a = frames[((frame % frames.Length) + frames.Length) % frames.Length];
+        double x = (u - Math.Floor(u)) * size - 0.5, y = (v - Math.Floor(v)) * size - 0.5;
+        int x0 = (int)Math.Floor(x), y0 = (int)Math.Floor(y);
+        double fx = x - x0, fy = y - y0;
+        int X(int i) => ((i % size) + size) % size;
+        float P(int px, int py) => a[X(py) * size + X(px)];
+        return (float)((P(x0, y0) * (1 - fx) + P(x0 + 1, y0) * fx) * (1 - fy) + (P(x0, y0 + 1) * (1 - fx) + P(x0 + 1, y0 + 1) * fx) * fy);
+    }
 }
 
 /// <summary>
