@@ -7,7 +7,8 @@
 // Unverified until seen in game: the particle name and whether it takes a tint, DRAW_POLY on rotated
 // quads, and whether velocity holds a ped. docs/forcefield-test.md covers each. Also unverified (11 Nov
 // visual pass): DRAW_TEXTURED_POLY_WITH_THREE_COLOURS over the centre texel of PlainTxd/PlainTexture
-// (assumed close to white), and the frame rate with up to 1,536 triangles a wall in range. If the
+// (assumed close to white). 1,536 calls for one wall crashed the game (about 1,400 a frame is the
+// limit), so it's now 288 calls a wall, the nearest 4 walls only, and never more than 1,200 a frame. If the
 // texture dictionary doesn't stream in, the walls fall back to flat DRAW_POLY cells without the light.
 
 using System;
@@ -180,6 +181,17 @@ public static class ForceFieldGame
         var vel = mover.Velocity;
         var cam = Function.Call<Vector3>(Hash.GET_FINAL_RENDERED_CAM_COORD);
 
+        // Only the nearest MaxDrawnWalls walls in range are drawn, and never more than MaxDrawCallsPerFrame calls.
+        drawn.Clear();
+        foreach (var site in sites)
+        {
+            float d = pos.DistanceTo2D(new Vector3(site.Segment.CentreX, site.Segment.CentreY, 0f));
+            if (d <= ForceField.CheckRadius) drawn.Add((d, site));
+        }
+        drawn.Sort((a, b) => a.dist.CompareTo(b.dist));
+        if (drawn.Count > ForceField.MaxDrawnWalls) drawn.RemoveRange(ForceField.MaxDrawnWalls, drawn.Count - ForceField.MaxDrawnWalls);
+        callsThisFrame = 0;
+
         foreach (var site in sites)
         {
             float dist = pos.DistanceTo2D(new Vector3(site.Segment.CentreX, site.Segment.CentreY, 0f));
@@ -194,11 +206,12 @@ public static class ForceFieldGame
             var result = ForceField.Step(site.Segment, site.Track, inVehicle ? ForceField.Vehicle : ForceField.OnFoot, pos.X, pos.Y, pos.Z, vel.X, vel.Y);
             if (result.Kind != PushKind.None) Apply(result, ped, mover, inVehicle, ref pos, ref vel);
 
-            if (table != null)
+            if (table != null && drawn.Exists(e => e.site == site))
             {
                 var middle = Draw(site, cam);
                 UpdateParticles(site, middle);
             }
+            else StopParticles(site);   // not drawn this tick, so no crackle on an invisible wall
         }
     }
 
@@ -280,11 +293,6 @@ public static class ForceFieldGame
         return false;
     }
 
-    readonly struct Layer(float offset, float height, float alpha, float extraThickness)
-    {
-        public readonly float Offset = offset, Height = height, Alpha = alpha, ExtraThickness = extraThickness;
-    }
-
     // One grid corner: where it is, and its colour (0 to 255) and alpha with the light applied.
     struct Corner
     {
@@ -293,12 +301,14 @@ public static class ForceFieldGame
     }
 
     static readonly Corner[,] corners = new Corner[ForceField.Cols + 1, ForceField.Rows + 1];
+    static readonly List<(float dist, Site site)> drawn = [];
+    static int callsThisFrame;
 
-    // Two layers of Cols x Rows cells. Colour (for the view angle and film thickness), haze and the QPAM
+    // One layer of Cols x Rows cells. Colour (for the view angle and film thickness), haze and the QPAM
     // light are worked out at every grid corner and blended across each triangle by the three-colour
     // native, so the wall has no facets. Without the plain texture, each triangle is drawn flat in its
-    // corners' average colour, without the light. DRAW_POLY-style triangles show one side only, so each
-    // is drawn in both windings. Returns the colour at the bottom middle of the wall.
+    // corners' average colour, without the light. A triangle shows one side only, so each is drawn in
+    // both windings: CallsPerWall calls. Returns the colour at the bottom middle of the wall.
     static Color Draw(Site site, Vector3 cam)
     {
         var s = site.Segment;
@@ -306,54 +316,45 @@ public static class ForceFieldGame
         double seconds = Game.GameTime / 1000.0;
         int frame = ForceField.LightFrame(Game.GameTime);
         float rise = (float)(ForceField.LightRise * seconds % ForceField.LightTileMetres);
-        float width = s.Width;
-        // The front layer goes on the viewer's side of the wall.
-        float side = (cam.X - s.CentreX) * s.NormalX + (cam.Y - s.CentreY) * s.NormalY >= 0 ? 1f : -1f;
+        float width = s.Width, height = ForceField.WallHeight;
         Color middle = default;
-        var layers = new[]
-        {
-            new Layer(0f, ForceField.WallHeight, 1f, 0f),
-            new Layer(side * ForceField.FrontOffset, ForceField.FrontHeight, ForceField.FrontAlpha, ForceField.FrontThickness),
-        };
-        foreach (var layer in layers)
-        {
-            float ox = s.NormalX * layer.Offset, oy = s.NormalY * layer.Offset;
-            for (int i = 0; i <= ForceField.Cols; i++)
-                for (int j = 0; j <= ForceField.Rows; j++)
+        for (int i = 0; i <= ForceField.Cols; i++)
+            for (int j = 0; j <= ForceField.Rows; j++)
+            {
+                float f = (float)i / ForceField.Cols, z = height * j / ForceField.Rows, along = (f - 0.5f) * width;
+                float px = s.PointX(f), py = s.PointY(f);
+                float cos = ForceField.ViewCos(s, px, py, s.Z + z, cam.X, cam.Y, cam.Z);
+                var (cr, cg, cb) = table.Colour(cos, ForceField.ThicknessAt(seconds, along, z));
+                int alpha = (int)Math.Round(ForceField.BaseAlpha * ForceField.Haze(along, z, height, width));
+                if (smooth)
                 {
-                    float f = (float)i / ForceField.Cols, z = layer.Height * j / ForceField.Rows, along = (f - 0.5f) * width;
-                    float px = s.PointX(f) + ox, py = s.PointY(f) + oy;
-                    float cos = ForceField.ViewCos(s, px, py, s.Z + z, cam.X, cam.Y, cam.Z);
-                    var (cr, cg, cb) = table.Colour(cos, ForceField.ThicknessAt(seconds, along, z) + layer.ExtraThickness);
-                    int alpha = (int)Math.Round(ForceField.BaseAlpha * layer.Alpha * ForceField.Haze(along, z, layer.Height, width));
-                    if (smooth)
-                    {
-                        // u along the wall and v up it, in tiles; the image's v runs down.
-                        float lit = light.Sample(frame, along / ForceField.LightTileMetres, -(z - rise) / ForceField.LightTileMetres);
-                        cr = ForceField.Lit(cr, lit);
-                        cg = ForceField.Lit(cg, lit);
-                        cb = ForceField.Lit(cb, lit);
-                        alpha = ForceField.LitAlpha(alpha, lit);
-                    }
-                    corners[i, j] = new Corner { X = px, Y = py, Z = s.Z + z, R = (float)(cr * 255), G = (float)(cg * 255), B = (float)(cb * 255), A = Math.Min(255, alpha) };
-                    if (layer.Offset == 0f && i == ForceField.Cols / 2 && j == 0)
-                        middle = Color.FromArgb(Math.Min(255, alpha), Byte(cr * 255), Byte(cg * 255), Byte(cb * 255));
+                    // u along the wall and v up it, in tiles; the image's v runs down.
+                    float lit = light.Sample(frame, along / ForceField.LightTileMetres, -(z - rise) / ForceField.LightTileMetres);
+                    cr = ForceField.Lit(cr, lit);
+                    cg = ForceField.Lit(cg, lit);
+                    cb = ForceField.Lit(cb, lit);
+                    alpha = ForceField.LitAlpha(alpha, lit);
                 }
+                corners[i, j] = new Corner { X = px, Y = py, Z = s.Z + z, R = (float)(cr * 255), G = (float)(cg * 255), B = (float)(cb * 255), A = Math.Min(255, alpha) };
+                if (i == ForceField.Cols / 2 && j == 0)
+                    middle = Color.FromArgb(Math.Min(255, alpha), Byte(cr * 255), Byte(cg * 255), Byte(cb * 255));
+            }
 
-            for (int i = 0; i < ForceField.Cols; i++)
-                for (int j = 0; j < ForceField.Rows; j++)
-                {
-                    // lower-right (i,j)(i+1,j)(i+1,j+1), then upper-left (i,j)(i+1,j+1)(i,j+1)
-                    Triangle(corners[i, j], corners[i + 1, j], corners[i + 1, j + 1], smooth);
-                    Triangle(corners[i, j], corners[i + 1, j + 1], corners[i, j + 1], smooth);
-                }
-        }
+        for (int i = 0; i < ForceField.Cols; i++)
+            for (int j = 0; j < ForceField.Rows; j++)
+            {
+                // lower-right (i,j)(i+1,j)(i+1,j+1), then upper-left (i,j)(i+1,j+1)(i,j+1)
+                Triangle(corners[i, j], corners[i + 1, j], corners[i + 1, j + 1], smooth);
+                Triangle(corners[i, j], corners[i + 1, j + 1], corners[i, j + 1], smooth);
+            }
         return middle;
     }
 
     static void Triangle(in Corner a, in Corner b, in Corner c, bool smooth)
     {
         if (a.A < 2 && b.A < 2 && c.A < 2) return;
+        if (callsThisFrame + 2 > ForceField.MaxDrawCallsPerFrame) return;   // the hard stop: the game crashes past ~1,400
+        callsThisFrame += 2;
         if (smooth)
         {
             Smooth(a, b, c);

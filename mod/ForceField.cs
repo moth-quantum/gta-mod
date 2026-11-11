@@ -68,15 +68,15 @@ public static class ForceField
 
     // The look (11 Nov visual pass): a grid of cells, each two triangles with their own colour, so the
     // colour shifts smoothly across the wall; a haze that fades out towards the top and both ends; a
-    // second, lower, fainter layer just in front on the viewer's side; and the QPAM light texture.
-    public const int Cols = 24, Rows = 8;        // per layer; DRAW_POLY is one colour per triangle
+    // QPAM light carried by the corner colours. One layer only: the game crashes past about 1,400 draw
+    // calls a frame (Alejandro, 11 Nov), so the grid, the number of walls drawn and the calls are capped.
+    public const int Cols = 12, Rows = 6;        // cells per wall
+    public const int CallsPerWall = Cols * Rows * 2 * 2;   // two triangles a cell, each drawn in both windings: 288
+    public const int MaxDrawnWalls = 4;          // only the nearest walls in range are drawn; the rest still push
+    public const int MaxDrawCallsPerFrame = 1200;   // hard stop under the ~1,400 crash, whatever the settings
     public const int BaseAlpha = 170;            // at the road, mid-wall, before the light texture
     public const float HazeFalloff = 0.9f;       // haze = (1 - height share) ^ this; under 1 keeps the top half visible
     public const float EndFade = 0.15f;          // share of the width that fades out at each end
-    public const float FrontOffset = 0.8f;       // metres, the second layer in front of the wall
-    public const float FrontHeight = 4.5f;       // metres
-    public const float FrontAlpha = 0.45f;       // share of the main layer's alpha
-    public const float FrontThickness = 30f;     // nm added, so the layers differ in colour
 
     public const float ThicknessCentre = 500f;   // nm, the shader's default
     public const float ThicknessDrift = 40f;     // nm either way, over time

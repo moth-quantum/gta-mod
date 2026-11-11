@@ -424,6 +424,9 @@ static class ForceFieldChecks
         Check(Enumerable.Range(0, 100).All(i => ForceField.LightFrame(i * 97) is >= 0 and < ForceField.LightFrames), "the light frame is always a real frame");
         Check(ForceField.LightFrame(0) != ForceField.LightFrame(ForceField.LightFrameMs), "the light frame changes every step");
         Check(ForceField.LightFrame(int.MaxValue) is >= 0 and < ForceField.LightFrames, "the light frame survives game time wrapping");
+        Check(ForceField.CallsPerWall == ForceField.Cols * ForceField.Rows * 4, "a wall is two triangles a cell, each drawn twice");
+        Check(ForceField.CallsPerWall * ForceField.MaxDrawnWalls <= ForceField.MaxDrawCallsPerFrame, "the nearest walls all fit inside the frame's call budget");
+        Check(ForceField.MaxDrawCallsPerFrame < 1400, "the call budget stays under the ~1,400 a frame that crashed the game");
 
         // The light field: averaging, wrap-around and the colour and alpha it gives.
         var dark = new byte[16]; var bright = Enumerable.Repeat((byte)255, 16).ToArray();
