@@ -141,6 +141,7 @@ public partial class QDayScript : Script
             Log.Write($"atlas result {atlasResult.Name}: {atlasResult}");
             CatchQDayResult(atlasResult);   // QDayPrefetch.cs: kept whatever phase we are in
         }
+        QDayTitle.Tick();   // the Q-Day title, an overlay; the phase's own drawing (the ticker) still runs
 
         phases[phase].Tick();
         LockdownGame.TickForceField();
@@ -169,6 +170,7 @@ public partial class QDayScript : Script
         truckBlip?.Delete();
         truck?.MarkAsNoLongerNeeded();
         chipProp?.MarkAsNoLongerNeeded();
+        QDayTitle.Stop();
         keypad?.MarkAsNoLongerNeeded();
         startBlip = null;
         objectiveBlip = null;
@@ -356,6 +358,7 @@ public partial class QDayScript : Script
         Hack.Close();                    // before the waits below, so the player isn't left frozen through them
         // Clear the wanted level now: delivery runs at 3-5 stars and the fade below takes seconds.
         Game.Player.WantedLevel = 0;
+        QDayTitle.Stop();                // so the failure card isn't drawn under it
         Hud.BigMessage("MISSION FAILED", reason);
         Wait(2500);                      // let it be read before the screen goes
         Screen.FadeOut(1500);
@@ -721,6 +724,9 @@ public partial class QDayScript : Script
         if (r.Ints is { Count: > 0 }) rng = new AtlasRandom(r.Ints, r.Start);
         Function.Call(Hash.ANIMPOSTFX_PLAY, "DeathFailMPIn", 1500, false);
         Function.Call(Hash.SET_CREATE_RANDOM_COPS, false);
+        // The title lands on the seed picked by the first Q-Day random number, taken before the ticker and riot use them.
+        // While it runs, the Q-DAY card below is skipped (Hud.BigMessage); if the font fails to load, that card shows instead.
+        QDayTitle.Start(r.Ints is { Count: > 0 } ? rng.Next() : null, r.S);
         stormStarted = false;
         armedTotal = 0;
         BuildTicker(r);
@@ -858,21 +864,33 @@ public partial class QDayScript : Script
     }
 
     // ---- Ending: fade out, credit the hardware, back to Idle -------------------------
+    bool endingTitleTried, endingTitleShown, endingCardShown;
+    const double EndingFallbackSeconds = 12;   // how long the fallback card stays before Idle, as before the title
+
     void BeginEnding()
     {
         Screen.FadeOut(3000);
         Log.Write("ending");
+        endingTitleTried = endingTitleShown = endingCardShown = false;
     }
 
     void TickEnding()
     {
-        if (Elapsed() > 3.5 && Elapsed() < 4)
+        // Once the screen is black: "you survived qday", landing on the next of the riot's Atlas numbers, with the credit under it.
+        if (!endingTitleTried && Elapsed() > 3 && (Screen.IsFadedOut || Elapsed() > 4))
+        {
+            endingTitleTried = true;
+            var credit = lastResult;
+            endingTitleShown = QDayTitle.StartEnding(rng is AtlasRandom ? rng.Next() : null, $"Random numbers generated on {credit?.Backend ?? "IBM hardware"} via Moth Atlas. Job {credit?.JobId}.");
+        }
+        if (endingTitleTried && !endingTitleShown && !endingCardShown)   // the fallback, if the ending font wouldn't load
         {
             var r = lastResult;
-            Hud.BigMessage("POST-QUANTUM CRYPTOGRAPHY", "was available the whole time");
+            endingCardShown = true; Hud.BigMessage("YOU SURVIVED QDAY", "");
             Notification.Show($"Random numbers generated on {r?.Backend ?? "IBM hardware"} via Moth Atlas. Job {r?.JobId}.");
         }
-        if (Elapsed() > 12) { Screen.FadeIn(2000); GoTo(Phase.Idle); }
+        // Back to Idle only once the title has finished, or after the fallback card has had its time.
+        if (endingTitleTried && !QDayTitle.IsActive && (endingTitleShown || Elapsed() > EndingFallbackSeconds)) { Screen.FadeIn(2000); GoTo(Phase.Idle); }
     }
 }
 
@@ -917,7 +935,7 @@ public static class Chaos
 
 public static class Hud
 {
-    public static void Draw(Phase phase, int chip, int logical, double err, double penalty, double threshold, AtlasResult last)
+    static void DrawPanel(Phase phase, int chip, int logical, double err, double penalty, double threshold, AtlasResult last)
     {
         if (Hack.IsOpen) return;   // the hack's panel takes the screen; checked here rather than in OnTick to keep that line unchanged
         var errText = double.IsNaN(err) ? "--" : (err * 100).ToString("0.00") + "%";
@@ -1014,8 +1032,15 @@ public static class Hud
         }
     }
 
+    /// <summary>The HUD panel, which steps aside while the Q-Day title is on screen.</summary>
+    public static void Draw(Phase phase, int chip, int logical, double err, double penalty, double threshold, AtlasResult last)
+    {
+        if (!QDayTitle.IsActive) DrawPanel(phase, chip, logical, err, penalty, threshold, last);
+    }
+
     public static void BigMessage(string title, string sub)
     {
+        if (title == "Q-DAY" && QDayTitle.IsActive) return;   // the animated title replaces this card; it's the fallback if the title can't start
         Screen.ShowSubtitle($"~b~{title}~s~  {sub}", 6000);
         Notification.Show($"~b~{title}~s~ {sub}");
     }
