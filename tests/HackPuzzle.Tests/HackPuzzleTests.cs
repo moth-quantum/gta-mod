@@ -115,8 +115,9 @@ public class HackPuzzleTests
     }
 
     [Theory]
-    [InlineData(3, 3, 1)]   // FIB Building
-    [InlineData(4, 4, 2)]   // Fort Zancudo
+    [InlineData(3, 3, 1)]
+    [InlineData(4, 4, 2)]   // FIB Building
+    [InlineData(5, 5, 3)]   // Fort Zancudo
     public void A_thousand_generated_layouts_never_start_solved(int rows, int cols, int flips)
     {
         var rng = new Random(1234);
@@ -140,5 +141,27 @@ public class HackPuzzleTests
     public void The_layout_text_shows_the_hidden_state_by_row()
     {
         Assert.Equal("000/010/000", OneFlipped(3, 3, 4).LayoutText);
+    }
+
+    [Fact]
+    public void A_new_error_flips_the_state_but_leaves_the_marks_alone()
+    {
+        var p = Clean(5, 5);
+        p.Disturb(12);
+        Assert.True(p.State[12]);
+        Assert.False(p.PlayerMarks[12]);
+        Assert.Equal(4, p.LitCount);
+        p.Flip(12);                      // the player fixes it: state back, and their mark shows the flip
+        Assert.True(p.IsSolved);
+        Assert.True(p.PlayerMarks[12]);
+    }
+
+    [Fact]
+    public void A_new_error_on_a_flipped_qubit_fixes_it()
+    {
+        var p = OneFlipped(4, 4, 5);
+        p.Disturb(5);
+        Assert.True(p.IsSolved);
+        Assert.Throws<ArgumentOutOfRangeException>(() => p.Disturb(16));
     }
 }

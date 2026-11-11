@@ -44,6 +44,16 @@ public sealed class HackPuzzle
         PlayerMarks[i] = !PlayerMarks[i];
     }
 
+    /// <summary>
+    /// A new error: flips a qubit's hidden state without touching the player's marks, so the marks still
+    /// show only what the player did. Fort Zancudo calls this on a timer while the hack is open.
+    /// </summary>
+    public void Disturb(int i)
+    {
+        if (i < 0 || i >= Count) throw new ArgumentOutOfRangeException(nameof(i));
+        State[i] = !State[i];
+    }
+
     public bool AreNeighbours(int a, int b)
     {
         if (a < 0 || b < 0 || a >= Count || b >= Count) return false;

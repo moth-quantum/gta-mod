@@ -10,14 +10,14 @@ Build `mod/`, copy `bin/QDay.dll` to `scripts\`, set `Debug = true` in `QDay.ini
 
 ## How it should play
 
-The panel shows a grid of identical squares, which are the qubits, with a short bar between each pair of neighbours. A bar is red and thick when its two qubits disagree, and thin and dark grey when they agree. The player moves the yellow cursor, flips a qubit and watches the bars change, and a qubit they've flipped gets a small dark square so they can undo it. It's solved when every bar is dim, which shows `SYSTEM OPEN` for about 1.5 seconds before the panel closes. The FIB Building is a 3 by 3 grid with one flipped qubit and no timer, and Fort Zancudo is 4 by 4 with two flipped qubits and a 60-second timer.
+The panel (redrawn in the 11 Nov visual pass) dims the world and opens as a dark terminal window with a cyan frame, corner brackets, a faint grid and scanlines. A header strip names the terminal and blinks `BREACH`. The qubits are framed squares labelled q0, q1 and so on, with a short bar between each pair of neighbours: a bar glows and pulses red when its two qubits disagree, and is a thin grey line when they agree. The player moves the yellow corner-bracket cursor and flips a qubit, which flashes white and gets a small glowing cyan square so they can undo it. The status row under the grid counts the red lights and flips and shows the timer as a draining bar. It's solved when every bar is dim: the screen flashes green, the squares turn green in a wave, `SYSTEM OPEN` types itself out, and the panel closes after about 1.5 seconds. The FIB Building is a 4 by 4 grid with two flipped qubits and a 90-second timer. Fort Zancudo is 5 by 5 with three flipped qubits, a 60-second timer, and a new error every 15 seconds: a random qubit flips by itself, its square flashes amber, and the header shows `NEW ERROR`. The header and status text (`FIB BUILDING // FLOOR 49 // SECURE TERMINAL`, `BREACH`, `RED LIGHTS` and so on) are placeholders still to be agreed in `docs/script.md`. Everything is drawn with rectangles and GTA's monospace font; `TextPxPerScale` in `Hack.cs` turns the design's pixel sizes into GTA text scale and is a guess.
 
 ## A. Opening it
 
 1. **FIB terminal:** in the FIB Building heist, a terminal with a yellow ground marker and a small green blip appears near the van once the scene spawns. The subtitle reads `Hack the terminal to release the truck.` and the log shows `hack terminal for FIB at ...`. Please note whether the terminal sits sensibly and whether the electrical box model looks right, or whether it fell back to a laptop.
 2. **Zancudo terminal:** the same at Fort Zancudo, with `hack terminal for Zancudo`.
 3. **Help text:** on foot within about 1.5 m of the terminal, the help box reads `Press E to hack the terminal`, with GTA's own key icon. It doesn't show in a vehicle.
-4. **Opening:** pressing E opens the panel. The log shows `hack open FIB: 3x3, 1 flipped, layout ...` (or `Zancudo: 4x4, 2 flipped`).
+4. **Opening:** pressing E opens the panel. The log shows `hack open FIB: 4x4, 2 flipped, layout ...` (or `Zancudo: 5x5, 3 flipped`). The panel grows open from a line in about a fifth of a second.
 5. **F2:** F2 opens the FIB hack anywhere outside the Zancudo heist, and the Zancudo hack during it. The log shows `DEBUG F2 open hack ...`. F2 while the hack is open does nothing.
 
 ## B. Controls and drawing
@@ -27,7 +27,7 @@ The panel shows a grid of identical squares, which are the qubits, with a short 
 8. **Nothing else works:** while the panel is open, the player can't walk, shoot, change weapon, open the phone or open the pause menu, and the player (or their car, with F2 in a vehicle) stays still.
 9. **Input guard:** the E press that opens the hack doesn't move or flip anything. Opening with F2 while holding an arrow key also shouldn't register a move in the first quarter of a second.
 10. **Prompt bar:** GTA's button prompts in the bottom right read move, flip and quit, with the right icons for keyboard and pad, and they change when you switch between them. The move icon uses an input group number I couldn't confirm, so please say if it shows the wrong buttons.
-11. **Readability at 1080p:** the squares, cursor, marks and bars are clear, a lit bar is easy to tell from a dim one without relying on colour, and the instruction line fits inside the panel. The HUD panel in the top right is hidden while the hack is open.
+11. **Readability at 1080p:** the squares, cursor, marks and bars are clear, a lit bar is easy to tell from a dim one without relying on colour, and the instruction line fits inside the panel. The text sizes are the part most likely to be off: check the title, the header strip, the q labels and the status row against each other, and say if `TextPxPerScale` needs changing. On the 5 by 5 Zancudo grid, the panel should clear GTA's button prompts in the bottom right. The HUD panel in the top right is hidden while the hack is open.
 
 ## C. Playing it
 
@@ -37,7 +37,8 @@ The panel shows a grid of identical squares, which are the qubits, with a short 
 15. **Solving:** with every bar dim, `SYSTEM OPEN` shows for about 1.5 seconds and then the panel closes. The log shows `hack FIB: solved in N s with M flips`, then `hack FIB solved at the terminal, truck unlocked`.
 16. **Success sound:** a short sound plays on solve. The sound name is a guess, `Hack_Success` from `DLC_HEIST_BIOLAB_PREP_HACKING_SOUNDS`, so please say whether you heard anything.
 17. **Solving the other way:** flipping every qubit except the faulty ones also leaves every bar dim, and counts as solved.
-18. **Zancudo timer:** the timer counts down from 1:00 and turns red in the last 10 seconds. When it runs out, the grid gets a new layout, your marks clear, the timer restarts and the log shows `timer ran out, new layout ...`. The mission doesn't fail.
+18. **Timers:** the bar drains from 1:30 at the FIB Building and 1:00 at Fort Zancudo, and turns red in the last 10 seconds. When it runs out, the grid gets a new layout, your marks clear, the timer restarts and the log shows `timer ran out, new layout ...`. The mission doesn't fail.
+18a. **New errors at Zancudo:** every 15 seconds a random qubit flips by itself: its square flashes amber, `NEW ERROR` shows in the header for a moment, the bars change, and the log shows `hack Zancudo: new error on qubit N`. It doesn't add a mark. If it happens to flip back the last wrong qubit, the hack counts as solved. Say whether the pace feels fair; it's `ZancudoNewErrorSeconds` in `Hack.cs`.
 
 ## D. Cancelling and the truck
 
