@@ -32,7 +32,7 @@ public sealed class PhaseCallbacks(Action begin = null, Action tick = null, Acti
 
 public class QDayScript : Script
 {
-    const int DefaultChipIndex = 0;
+    const int DefaultChipIndex = ChipFIB;
 
     const int ChipHumaneLabs = 0;
     const int ChipFIB = 1;
@@ -81,6 +81,7 @@ public class QDayScript : Script
     public QDayScript()
     {
         Log.Init(BaseDirectory);
+        TextureSwap.Init();
         // [Atlas] ApiKey in QDay.ini; no key or Offline = true plays from the recorded results.
         atlas = new(Settings.GetValue("Atlas", "ApiKey", ""), Settings.GetValue("Atlas", "Offline", false));
         lockdown = new(LockdownGame.LoadDistricts());
@@ -109,7 +110,7 @@ public class QDayScript : Script
         string startupMsg = "~b~Q-DAY~s~ loaded.~n~  go to the ~y~Q~s~ blip to start~n~  F10 abort";
         if (debug)
         {
-            startupMsg += "~n~~y~DEBUG:~s~~n~  F3 road test~n~  F4 test wall~n~  F5 teleport~n~  F6 skip wait~n~  F7 Q-Day now~n~  F8 Legion Square~n~  F9 start now";
+            startupMsg += "~n~~y~DEBUG:~s~~n~  F3 road test~n~  F4 test wall~n~  F5 teleport~n~  F6 skip wait~n~  F7 Q-Day now~n~  F8 Legion Square~n~  F9 start now~n~  T textures on/off";
         }
         Notification.Show(startupMsg);
     }
@@ -139,6 +140,7 @@ public class QDayScript : Script
 
         phases[phase].Tick();
         LockdownGame.TickForceField();
+        TextureSwap.Tick();
         if (phase != Phase.Idle) Hud.Draw(phase, chipIndex, logicalQubits, DisplayedError(), damagePenalty, Threshold, lastResult);
     }
 
@@ -146,6 +148,7 @@ public class QDayScript : Script
     // Blips outlive the script, so remove ours or a reload leaves a duplicate on the map.
     void OnAborted(object sender, EventArgs e)
     {
+        TextureSwap.RemoveTextureHook();
         atlas.Dispose();
         CleanUpWorld();
     }
@@ -171,6 +174,7 @@ public class QDayScript : Script
         keypad = null;
         Hack.Close();
         hackGate.Clear();
+        TextureSwap.ReplacementEnabled = false;
     }
 
     /// <summary>This tick's Atlas result if it is the named job and it succeeded, else null.</summary>
@@ -205,6 +209,13 @@ public class QDayScript : Script
             if (phase == Phase.Calibrating) { Log.Write("DEBUG F6 in Calibrating: recorded calibration"); FinishCalibration(chipIndex == loc.Chips.Count - 1 ? 0.0173 : 0.085); }
             else if (phase == Phase.Threshold) { Log.Write("DEBUG F6 in Threshold: recorded qday"); StartQDay(AtlasResult.Recorded()); }
             else if (phase == Phase.QDay) { Log.Write("DEBUG F6 in QDay: skip the riot"); GoTo(Phase.Escape); }
+        }
+        // T toggles the texture replacement; the SetTexture hook stays installed. Not while the hack is open: it takes typing.
+        if (e.KeyCode == Keys.T && !Hack.IsOpen && TextureSwap.HookInstalled)
+        {
+            TextureSwap.ReplacementEnabled = !TextureSwap.ReplacementEnabled;
+            Log.Write($"DEBUG T texture replacement {(TextureSwap.ReplacementEnabled ? "on" : "off")}");
+            Notification.Show($"~y~DEBUG:~s~ texture replacement {(TextureSwap.ReplacementEnabled ? "~g~on" : "~r~off")}");
         }
         if (e.KeyCode == Keys.F8) { Game.Player.Character.Position = new(195.0f, -933.0f, 30.7f); Log.Write("DEBUG F8 teleport to Legion Square"); }
         if (e.KeyCode == Keys.F7)
@@ -669,6 +680,7 @@ public class QDayScript : Script
         stormStarted = false;
         armedTotal = 0;
         BuildTicker(r);
+        TextureSwap.ReplacementEnabled = true;
         lockdown.Submit(atlas, r);
         Hud.BigMessage("Q-DAY", $"Bell S = {r.S:0.00} > 2    every key on earth is public");
         Log.Write($"Q-DAY. S={r.S} commit={r.Commit} backend={r.Backend} certified={r.Certified}");
@@ -746,6 +758,7 @@ public class QDayScript : Script
 
     void EndQDay()
     {
+        TextureSwap.ReplacementEnabled = false;
     }
 
     void BuildTicker(AtlasResult r)
