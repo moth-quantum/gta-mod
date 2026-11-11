@@ -32,7 +32,7 @@ public sealed class PhaseCallbacks(Action begin = null, Action tick = null, Acti
 
 public partial class QDayScript : Script
 {
-    const int DefaultChipIndex = ChipFIB;
+    const int DefaultChipIndex = ChipHumaneLabs;
 
     const int ChipHumaneLabs = 0;
     const int ChipFIB = 1;

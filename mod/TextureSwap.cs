@@ -350,7 +350,7 @@ public static unsafe class TextureSwap
         }
     }
 
-    private static volatile bool replacementEnabled = true;
+    private static volatile bool replacementEnabled = false;
 
     public static bool ReplacementEnabled
     {
