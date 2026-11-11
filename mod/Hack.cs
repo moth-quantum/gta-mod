@@ -33,11 +33,11 @@ public static class Hack
 
     // ---- text, exactly as specified --------------------------------------------------
     const string Title = "FIX THE ERRORS";
-    const string Instruction = "A red light means two neighbours disagree. Find the flipped qubits and flip them back.";
+    const string Instruction = "A red light means two neighbours disagree  :  Find the flipped qubits and flip them back";
     const string SuccessText = "SYSTEM OPEN";
     // Placeholders from the 11 Nov visual pass, to be confirmed against docs/script.md.
-    const string FibSite = "FIB BUILDING // FLOOR 49 // SECURE TERMINAL";
-    const string ZancudoSite = "FORT ZANCUDO // HANGAR 2 // SECURE TERMINAL";
+    const string FibSite = "FIB BUILDING : : FLOOR 49 : : SECURE TERMINAL";
+    const string ZancudoSite = "FORT ZANCUDO : : HANGAR 2 : : SECURE TERMINAL";
     const string BreachText = "BREACH", LinkText = "LINK OK", NewErrorText = "NEW ERROR";
     const string LitText = "RED LIGHTS", FlipsText = "FLIPS", RescrambleText = "RESCRAMBLE", NoTimerText = "NO TIMER";
 
