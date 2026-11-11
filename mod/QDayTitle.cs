@@ -5,15 +5,13 @@
 // only. It's an overlay: the player keeps control throughout.
 //
 // Horizontal and vertical strokes are DRAW_RECT. I couldn't confirm a plain white texture in the game files,
-// so diagonals default to small DRAW_RECT squares stepped along the stroke, which needs no texture. Setting
-// DiagonalsAsSprites draws them as one rotated sprite each instead, with the texture checked when it loads.
+// so diagonals are small DRAW_RECT squares stepped along the stroke, which needs no texture.
 
 using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.IO;
 using GTA;
-using GTA.Math;
 using GTA.Native;
 using GTA.UI;
 using Font = GTA.UI.Font;
@@ -23,8 +21,6 @@ namespace QDay;
 
 public static class QDayTitle
 {
-    static readonly bool DiagonalsAsSprites = false;    // see the note at the top; compare in game
-    const string SpriteDict = "commonmenu", SpriteName = "gradient_nav";   // candidate only, unconfirmed as plain white
     const float LineScale = 0.42f;
     const float LineGap = 18f;                           // canvas pixels under the glyph box
     const double StampSpacing = 0.5;                     // of a stamp's side, along a diagonal
@@ -52,7 +48,7 @@ public static class QDayTitle
     static GridFont font;
     static string line;
     static int startIndex, landingIndex, startedAt;
-    static bool landed, spriteChecked, spriteOk;
+    static bool landed;
     static int? stingId;
 
     public static bool IsActive { get; private set; }
@@ -88,7 +84,6 @@ public static class QDayTitle
         landed = false;
         startedAt = Game.GameTime;
         IsActive = true;
-        if (DiagonalsAsSprites) Function.Call(Hash.REQUEST_STREAMED_TEXTURE_DICT, SpriteDict, false);
         Log.Write($"{t.Name}: start index {startIndex}, landing index {landingIndex}, landing seed {font.SeedNumbers[landingIndex]}{(atlasValue.HasValue ? $" from Q-Day number {atlasValue.Value}" : "")}");
         return true;
     }
@@ -105,7 +100,6 @@ public static class QDayTitle
         stingId = null;
         if (!IsActive) return;
         IsActive = false;
-        if (DiagonalsAsSprites) Function.Call(Hash.SET_STREAMED_TEXTURE_DICT_AS_NO_LONGER_NEEDED, SpriteDict);
         if (cutShort && title.OverFade && (Screen.IsFadedOut || Screen.IsFadingOut)) Screen.FadeIn(500);
         Log.Write($"{title.Name}: {(cutShort ? "stopped" : "finished")}");
     }
@@ -163,14 +157,11 @@ public static class QDayTitle
 
         double aspect = Function.Call<float>(Hash.GET_ASPECT_RATIO, false);
         if (aspect < 0.5 || aspect > 5) aspect = 16.0 / 9;   // a bad reading shouldn't throw the layout off screen
-        bool sprites = DiagonalsAsSprites && SpriteReady();
         int seed = QDayTitleTimeline.SeedIndex(ms, startIndex, landingIndex, font.SeedCount);
         foreach (var st in TitleLayout.Strokes(font, seed, aspect))
         {
             if (st.Horizontal) Rect(st.CX, st.CY, st.Length, st.Thickness, aspect, a);
             else if (st.Vertical) Rect(st.CX, st.CY, st.Thickness, st.Length, aspect, a);
-            else if (sprites)
-                Function.Call(Hash.DRAW_SPRITE, SpriteDict, SpriteName, (float)(st.CX / aspect), (float)st.CY, (float)(st.Length / aspect), (float)st.Thickness, (float)st.AngleDegrees, 255, 255, 255, a, false, 0);
             else Stamp(st, aspect, a);
         }
 
@@ -197,18 +188,5 @@ public static class QDayTitle
             double f = (double)k / n - 0.5;
             Rect(st.CX + cos * run * f, st.CY + sin * run * f, side, side, aspect, a);
         }
-    }
-
-    static bool SpriteReady()
-    {
-        if (!Function.Call<bool>(Hash.HAS_STREAMED_TEXTURE_DICT_LOADED, SpriteDict)) return false;   // stamps until it loads
-        if (!spriteChecked)
-        {
-            spriteChecked = true;
-            var size = Function.Call<Vector3>(Hash.GET_TEXTURE_RESOLUTION, SpriteDict, SpriteName);
-            spriteOk = size.X > 0 && size.Y > 0;
-            Log.Write($"{title.Name}: sprite {SpriteDict}/{SpriteName} {(spriteOk ? $"is {size.X} x {size.Y}" : "not found, using stamps")}");
-        }
-        return spriteOk;
     }
 }

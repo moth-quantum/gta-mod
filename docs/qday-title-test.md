@@ -49,24 +49,20 @@ Build `mod/`, copy `bin/QDay.dll` to `scripts\`, set `Debug = true` in `QDay.ini
 21. **Script reload:** press Insert (or F11) mid-title. Nothing is left on screen after the reload.
 22. **Again:** after each of these, F7 plays the title again from the start.
 
-## F. Optional: sprite diagonals
-
-23. **Sprites:** to compare the sprite version, set `DiagonalsAsSprites` to `true` in `QDayTitle.cs` and rebuild. Diagonals are then one rotated sprite each, using `commonmenu` / `gradient_nav`, which I couldn't confirm is plain white. The log shows `qday title: sprite commonmenu/gradient_nav is W x H` or `not found, using stamps`. Please say whether the sprite diagonals look solid and match the straight strokes, and whether they're better than the default.
-
-## G. The ending title
+## F. The ending title
 
 The ending uses the same drawing with a second export, "you survived qday". Once the screen has faded to black, the title flickers and slows exactly as the Q-Day title does, lands at 3 seconds, holds for 4 seconds and fades over half a second, 7.5 seconds in all. It's drawn over a fully black backdrop, and after the game's own fade, so it shows on a black screen. The fastest way there is F7, then wait out the five-minute riot (F6 skips nothing here).
 
-24. **After the fade:** when the riot ends, the screen fades to black and then the title appears, not before. The log shows `ending title: font loaded, "you survived qday", 120 seeds 6584 to 6703` and `ending title: start index N, landing index M, landing seed S from Q-Day number V`.
-25. **Visible over black:** the letters are clearly visible on the black screen. If the screen just stays black, the draw order (`SET_SCRIPT_GFX_DRAW_ORDER(7)`, drawn after the fade) isn't working, so please say so.
-26. **Pace and hold:** the flicker and slowdown look the same as the Q-Day title's, and the landed letters hold for about 4 seconds before the half-second fade. The log shows `ending title: landed on seed S`, then `ending title: finished`.
-27. **Layout:** three words, evenly spaced, with the wider gaps after "you" and "survived", centred across about 70% of the width on one baseline.
-28. **Credit line:** from the landing on, the line under the title reads `Random numbers generated on ibm_marrakesh via Moth Atlas. Job 6eb8fa80-d13f-4f28-8b1b-f8fb7057f16b.` with the recorded result, or the live run's machine and job ID after a live Q-Day. It fades with the title. Please check the machine and job match the Q-Day lines in the log.
-29. **Nothing else:** there's no `POST-QUANTUM CRYPTOGRAPHY` card and no separate credit notification.
-30. **Sound:** the same hit as the Q-Day title plays at the landing.
-31. **Back to Idle after the title:** the screen fades back in and the mission returns to Idle only after the title has finished, about 11 seconds after the riot ends, with `phase Ending -> Idle` in the log after `ending title: finished`.
-32. **Fallback:** this needs a build with the ending export missing, so it's optional. Delete `ending_title_gridfont.json` from `recorded/` before building, but don't commit that. The log should show `ending title: font refused, using the YOU SURVIVED QDAY card instead`, then a `YOU SURVIVED QDAY` subtitle and the credit as a notification, and the mission returns to Idle after the old 12 seconds.
-33. **Clean-up:** press F10 during the ending title, and separately press Insert (or F11). Each time the title disappears, the screen fades back in rather than staying black, and the log shows `ending title: stopped`. A new run after each plays both titles again.
+23. **After the fade:** when the riot ends, the screen fades to black and then the title appears, not before. The log shows `ending title: font loaded, "you survived qday", 120 seeds 6584 to 6703` and `ending title: start index N, landing index M, landing seed S from Q-Day number V`.
+24. **Visible over black:** the letters are clearly visible on the black screen. If the screen just stays black, the draw order (`SET_SCRIPT_GFX_DRAW_ORDER(7)`, drawn after the fade) isn't working, so please say so.
+25. **Pace and hold:** the flicker and slowdown look the same as the Q-Day title's, and the landed letters hold for about 4 seconds before the half-second fade. The log shows `ending title: landed on seed S`, then `ending title: finished`.
+26. **Layout:** three words, evenly spaced, with the wider gaps after "you" and "survived", centred across about 70% of the width on one baseline.
+27. **Credit line:** from the landing on, the line under the title reads `Random numbers generated on ibm_marrakesh via Moth Atlas. Job 6eb8fa80-d13f-4f28-8b1b-f8fb7057f16b.` with the recorded result, or the live run's machine and job ID after a live Q-Day. It fades with the title. Please check the machine and job match the Q-Day lines in the log.
+28. **Nothing else:** there's no `POST-QUANTUM CRYPTOGRAPHY` card and no separate credit notification.
+29. **Sound:** the same hit as the Q-Day title plays at the landing.
+30. **Back to Idle after the title:** the screen fades back in and the mission returns to Idle only after the title has finished, about 11 seconds after the riot ends, with `phase Ending -> Idle` in the log after `ending title: finished`.
+31. **Fallback:** this needs a build with the ending export missing, so it's optional. Delete `ending_title_gridfont.json` from `recorded/` before building, but don't commit that. The log should show `ending title: font refused, using the YOU SURVIVED QDAY card instead`, then a `YOU SURVIVED QDAY` subtitle and the credit as a notification, and the mission returns to Idle after the old 12 seconds.
+32. **Clean-up:** press F10 during the ending title, and separately press Insert (or F11). Each time the title disappears, the screen fades back in rather than staying black, and the log shows `ending title: stopped`. A new run after each plays both titles again.
 
 ## Reporting back
 
