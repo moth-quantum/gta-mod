@@ -10,6 +10,7 @@ using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.IO;
+using System.Linq;
 using System.Threading;
 using System.Windows.Forms;
 using GTA;
@@ -181,6 +182,13 @@ public partial class QDayScript : Script
         Chaos.RemoveRelationships();
         Hack.Close();
         hackGate.Clear();
+        ClearVaultCash();
+        ReleaseVaultAudio();
+        ClearBriefcases();
+        pilot?.MarkAsNoLongerNeeded();
+        pilot = null;
+        plane?.MarkAsNoLongerNeeded();
+        plane = null;
         TextureSwap.ReplacementEnabled = false;
     }
 
@@ -233,6 +241,12 @@ public partial class QDayScript : Script
             Log.Write("DEBUG F7 jump to Q-Day");
             if (phase == Phase.Idle) StopStoryMissions();
             StartQDay(QDayLibrary.Pick());
+        }
+        if (e.KeyCode == Keys.Y)
+        {
+            vaultTrolley?.Delete();
+            vaultTrolley = null;
+            vaultTrolley = World.CreateProp(VaultTrolleyModel, VaultTrolleyPos, new(0.0f, 0.0f, 45.0f), false, false);
         }
     }
 
@@ -548,23 +562,30 @@ public partial class QDayScript : Script
 
     void SpawnGuards(string model, WeaponHash weapon)
     {
-        if (!guardGroupMade) { guardGroup = World.AddRelationshipGroup("QDAY_GUARDS"); guardGroupMade = true; }
-        guardGroup.SetRelationshipBetweenGroups(Game.Player.Character.RelationshipGroup, Relationship.Hate, true);
-
         for (int i = 0; i < GuardCount; i++)
         {
             double a = 2 * Math.PI * i / GuardCount;
             var at = truck.Position + new Vector3((float)Math.Cos(a) * GuardRadius, (float)Math.Sin(a) * GuardRadius, 0f);
-            var g = World.CreatePed(new(model), at, (float)(a * 180 / Math.PI) + 90f);   // facing outwards
-            if (g == null) { Log.Write($"guard {model} spawn failed"); continue; }
-            g.IsPersistent = true;
-            g.RelationshipGroup = guardGroup;
-            g.Weapons.Give(weapon, 500, true, true);
-            Function.Call(Hash.SET_PED_HAS_AI_BLIP, g, true);
-            Function.Call(Hash.TASK_START_SCENARIO_IN_PLACE, g, "WORLD_HUMAN_GUARD_STAND", 0, true);
-            guards.Add(g);
+            SpawnGuard(model, weapon, at, (float)(a * 180 / Math.PI) + 90f);   // facing outwards
         }
         Log.Write($"guards: {guards.Count} x {model} round the truck");
+    }
+
+    /// <summary>One guard, hostile to the player, standing guard. Goes in guards, so ClearGuards releases it.</summary>
+    Ped SpawnGuard(string model, WeaponHash weapon, Vector3 at, float heading)
+    {
+        if (!guardGroupMade) { guardGroup = World.AddRelationshipGroup("QDAY_GUARDS"); guardGroupMade = true; }
+        guardGroup.SetRelationshipBetweenGroups(Game.Player.Character.RelationshipGroup, Relationship.Hate, true);
+
+        var g = World.CreatePed(model, at, heading);
+        if (g == null) { Log.Write($"guard {model} spawn failed at {at}"); return null; }
+        g.IsPersistent = true;
+        g.RelationshipGroup = guardGroup;
+        g.Weapons.Give(weapon, 500, true, true);
+        Function.Call(Hash.SET_PED_HAS_AI_BLIP, g, true);
+        Function.Call(Hash.TASK_START_SCENARIO_IN_PLACE, g, "WORLD_HUMAN_GUARD_STAND", 0, true);
+        guards.Add(g);
+        return g;
     }
 
     void ClearGuards()
@@ -916,7 +937,7 @@ public partial class QDayScript : Script
     // ---- Escape: the bank, the passport, the way out, through the riot (script.md section 9) ----
     // Starts straight after the Q-Day title; the riot, the ticker and the lockdown's force fields carry on.
     // Any car will do for the way out (script step 5), so it has no step of its own.
-    // TODO: the roadblock, guards/crowd at the bank, cash prop, the stretch-goal car.
+    // TODO: the roadblock, guards/crowd at the bank, the stretch-goal car.
     // The passport is in one of two briefcases, both on the map at once, so the player picks which to go to first. A quantum
     // coin toss (rng, the Q-Day job's numbers) decides whether the first one opened holds it; if not, its blip goes and the
     // other one's is left, one more stop before the plane.
@@ -925,7 +946,10 @@ public partial class QDayScript : Script
     const double QDayTitleSeconds = 5, QDayTitleMaxSeconds = 15;   // Q-Day hands over once the title is done, never later than the max
     EscapeStep escapeStep;
     readonly Blip[] briefcaseBlips = new Blip[2];   // Passport: one per briefcase not opened yet, null once opened
+    readonly Pickup[] briefcasePickups = new Pickup[2];   // Passport: the briefcases themselves, picked up to open them
+    const string BriefcaseModel = "m24_2_prop_m42_metalbriefcase_01a";
     Ped pilot;
+    Vehicle plane;   // WayOut: the pilot's Shamal, parked beside him and locked
 
     // The Fleeca vault door, swung open by turning it -80 degrees on Z over VaultDoorSeconds, with the heist's unlock sound.
     const string VaultDoorModel = "v_ilev_gb_vauldr";
@@ -943,7 +967,7 @@ public partial class QDayScript : Script
         if (door == null || !door.Exists()) { Log.Write($"escape: no {VaultDoorModel} near {d}"); return false; }
 
         Function.Call(Hash.FREEZE_ENTITY_POSITION, door, true);
-        Function.Call(Hash.REQUEST_SCRIPT_AUDIO_BANK, "vault_door", false, -1);
+        if (!vaultAudioLoaded) Log.Write("escape: vault_door audio bank not loaded yet, the unlock sound may not play");
         var p = door.Position;
         Function.Call(Hash.PLAY_SOUND_FROM_COORD, -1, "vault_unlock", p.X, p.Y, p.Z, "dlc_heist_fleeca_bank_door_sounds", false, 0, false);
         vaultDoor = door;
@@ -964,17 +988,78 @@ public partial class QDayScript : Script
         return t >= 1.0;
     }
 
-    void VaultOpened()
+    // The cash: a trolley inside the vault with two cash piles on it, spawned as the door starts opening. The step moves on
+    // once both piles are picked up.
+    const string VaultTrolleyModel = "m25_2_prop_m52_cash_trolly_empty", VaultCashModel = "ex_cash_pile_01";
+    const int VaultCashValue = 100000;   // per pile
+    static readonly Vector3 VaultTrolleyPos = new(147.631f, -1047.535f, 28.358f);
+    // A bank guard by the vault, spawned with the cash.
+    const string VaultGuardModel = "s_m_m_security_01";
+    static readonly Vector3 VaultGuardPos = new(148.61f, -1050.26f, 28.35f);
+    const float VaultGuardHeading = 340.0f;
+    Prop vaultTrolley;
+    readonly Pickup[] vaultCash = new Pickup[2];
+    bool vaultCashSpawned;
+
+    void SpawnVaultCash()
+    {
+        if (vaultCashSpawned) return;
+        vaultCashSpawned = true;
+        vaultTrolley = World.CreateProp(VaultTrolleyModel, VaultTrolleyPos, new(0.0f, 0.0f, 45.0f), false, false);
+        if (vaultTrolley != null) vaultTrolley.IsPositionFrozen = true;
+        else Log.Write($"escape: couldn't create {VaultTrolleyModel}");
+        vaultCash[0] = World.CreatePickup(PickupType.MoneyVariable, new(147.508f, -1047.673f, 29.22f), new(0.0f, 0.0f, 225.0f), VaultCashModel, VaultCashValue);
+        vaultCash[1] = World.CreatePickup(PickupType.MoneyVariable, new(147.708f, -1047.484f, 29.215f), new(0.0f, 0.0f, 45.0f), VaultCashModel, VaultCashValue);
+        Log.Write($"escape: vault cash spawned ({vaultCash.Count(c => c != null)} of {vaultCash.Length} pickups)");
+        if (SpawnGuard(VaultGuardModel, WeaponHash.Pistol, VaultGuardPos, VaultGuardHeading) != null) Log.Write("escape: vault guard spawned");
+    }
+
+    /// <summary>True once every cash pickup is collected. A pickup that failed to spawn or has gone counts as taken.</summary>
+    bool IsVaultCashTaken() => vaultCash.All(c => c == null || !c.Exists() || c.IsCollected);
+
+    void ClearVaultCash()
+    {
+        for (int i = 0; i < vaultCash.Length; i++)
+        {
+            if (vaultCash[i] != null && vaultCash[i].Exists()) vaultCash[i].Delete();
+            vaultCash[i] = null;
+        }
+        if (vaultTrolley != null && vaultTrolley.Exists()) vaultTrolley.Delete();
+        vaultTrolley = null;
+        vaultCashSpawned = false;
+    }
+
+    void CashTaken()
     {
         ReleaseVaultDoor();
         EscapeTo(EscapeStep.Passport, "Got it? Good. Now get your passport. We need to get out of here. I'll text you where the flight's leaving from as soon as I know. I'll see you on the other side.");
     }
 
+    // The door's audio bank, requested from the moment the player reaches the bank so the unlock sound is ready on E.
+    bool vaultAudioRequested, vaultAudioLoaded;
+
+    /// <summary>Call every tick from reaching the bank: REQUEST_SCRIPT_AUDIO_BANK loads over several frames, true once loaded.</summary>
+    void LoadVaultAudio()
+    {
+        if (vaultAudioLoaded) return;
+        vaultAudioRequested = true;
+        vaultAudioLoaded = Function.Call<bool>(Hash.REQUEST_SCRIPT_AUDIO_BANK, "vault_door", false, -1);
+        if (vaultAudioLoaded) Log.Write("escape: vault_door audio bank loaded");
+    }
+
+    void ReleaseVaultAudio()
+    {
+        if (!vaultAudioRequested) return;
+        vaultAudioRequested = vaultAudioLoaded = false;
+        Function.Call(Hash.RELEASE_NAMED_SCRIPT_AUDIO_BANK, "vault_door");
+    }
+
     void ReleaseVaultDoor()
     {
+        ReleaseVaultAudio();
         if (vaultDoor == null) return;
+        vaultDoor.MarkAsNoLongerNeeded();
         vaultDoor = null;
-        Function.Call(Hash.RELEASE_NAMED_SCRIPT_AUDIO_BANK, "vault_door");
     }
 
     void BeginEscape()
@@ -1004,22 +1089,38 @@ public partial class QDayScript : Script
                 if (onFoot && ped.Position.DistanceTo(e.BankDoor) < 6f) EscapeTo(EscapeStep.Vault);
                 break;
             case EscapeStep.Vault:
-                // E opens the vault door; the step moves on once the door has finished opening.
-                if (vaultDoor == null && EscapeUse(e.Vault, "Press ~INPUT_CONTEXT~ to take the cash.") && !OpenVaultDoor())
-                    VaultOpened();   // no door found: don't hold the player up
-                else if (vaultDoor != null && TickVaultDoor())
-                    VaultOpened();
+                // E opens the vault door and the cash appears behind it; the step moves on once both piles are taken.
+                if (!vaultCashSpawned)
+                {
+                    LoadVaultAudio();
+                    if (EscapeUse(e.Vault, "Press ~INPUT_CONTEXT~ to open the vault door."))
+                    {
+                        OpenVaultDoor();   // no door found: the cash still appears, don't hold the player up
+                        SpawnVaultCash();
+                        Screen.ShowSubtitle("Take the ~g~cash~s~.", 8000);
+                        objectiveBlip?.Delete();
+                        objectiveBlip = World.CreateBlip(VaultTrolleyPos);   // EscapeTarget() is the trolley now
+                        objectiveBlip.Sprite = BlipSprite.CashPickup;
+                        objectiveBlip.Color = BlipColor.Green;
+                    }
+                }
+                else
+                {
+                    if (vaultDoor != null && TickVaultDoor()) ReleaseVaultDoor();   // fully open: leave it there
+                    if (IsVaultCashTaken()) CashTaken();
+                }
                 break;
             case EscapeStep.Passport:
                 for (int i = 0; i < e.Briefcases.Length; i++)
                 {
-                    if (briefcaseBlips[i] == null || !EscapeUse(e.Briefcases[i], "Press ~INPUT_CONTEXT~ to open the briefcase.")) continue;
+                    if (briefcaseBlips[i] == null || !BriefcaseTaken(i)) continue;
                     int other = 1 - i;
                     bool here = briefcaseBlips[other] == null || rng.Next(2) == 0;   // the second one opened always has it
                     Log.Write($"escape: briefcase {i}, {e.BriefcaseNames[i]} ({(rng is AtlasRandom ? "Atlas" : "System.Random")}): passport {(here ? "in" : "not in")} it");
                     if (here) { EscapeTo(EscapeStep.WayOut, $"Flight's leaving from {e.WayOutName}. The pilot only takes cash. Go."); break; }
                     briefcaseBlips[i].Delete();
                     briefcaseBlips[i] = null;
+                    briefcasePickups[i] = null;   // collected: the game has removed it
                     briefcaseBlips[other].ShowRoute = true;
                     LesterText($"Empty? Then it's in the other one, at {e.BriefcaseNames[other]}.");
                     Screen.ShowSubtitle($"Get the other briefcase from ~y~{e.BriefcaseNames[other]}~s~.", 8000);
@@ -1047,10 +1148,13 @@ public partial class QDayScript : Script
         LockdownGame.ClearForceField();
         objectiveBlip?.Delete();
         objectiveBlip = null;
-        ClearBriefcaseBlips();
+        ClearBriefcases();
         ReleaseVaultDoor();
+        ClearVaultCash();
         pilot?.MarkAsNoLongerNeeded();
         pilot = null;
+        plane?.MarkAsNoLongerNeeded();   // not deleted: it would vanish in front of the player as the ending fades
+        plane = null;
     }
 
     /// <summary>Moves the escape on: Lester's line if any, the objective, and the blip.</summary>
@@ -1063,7 +1167,7 @@ public partial class QDayScript : Script
         Screen.ShowSubtitle(step switch
         {
             EscapeStep.ToBank => "Get to the ~y~bank~s~.",
-            EscapeStep.Vault => "Take the ~g~cash~s~.",
+            EscapeStep.Vault => "Open the ~y~vault door~s~.",
             EscapeStep.Passport => $"Your passport's in one of two ~y~briefcases~s~, at {e.BriefcaseNames[0]} or {e.BriefcaseNames[1]}.",
             EscapeStep.WayOut => $"Meet the ~b~pilot~s~ at the airport.",
             _ => "",
@@ -1071,13 +1175,20 @@ public partial class QDayScript : Script
 
         objectiveBlip?.Delete();
         objectiveBlip = null;
-        ClearBriefcaseBlips();
+        ClearBriefcases();
 
         if (step == EscapeStep.WayOut)
         {
             pilot = World.CreatePed("s_m_m_pilot_01", e.Pilot);
             pilot.IsInvincible = true;
             pilot.BlockPermanentEvents = true;
+            plane = World.CreateVehicle(VehicleHash.Shamal, e.Plane, e.PlaneHeading);
+            if (plane != null)
+            {
+                plane.IsInvincible = true;   // the riot doesn't get to blow up the way out
+                plane.LockStatus = VehicleLockStatus.CannotEnter;
+            }
+            else Log.Write($"escape: couldn't create the Shamal at {e.Plane}");
             objectiveBlip = pilot.AddBlip();
             objectiveBlip.Sprite = BlipSprite.VIP;
             objectiveBlip.Color = BlipColor.Blue;
@@ -1092,6 +1203,9 @@ public partial class QDayScript : Script
                 briefcaseBlips[i].Sprite = BlipSprite.CaptureBriefcase;
                 briefcaseBlips[i].Color = BlipColor.Green;
                 briefcaseBlips[i].Scale = 0.8f;
+                briefcaseBlips[i].Name = "Passport Briefcase";
+                briefcasePickups[i] = World.CreatePickup(PickupType.CustomScript, e.Briefcases[i], new(0.0f, 0.0f, 0.0f), BriefcaseModel, 0);
+                if (briefcasePickups[i] == null) Log.Write($"escape: couldn't create the {BriefcaseModel} pickup at {e.BriefcaseNames[i]}, falling back to E");
             }
             return;
         }
@@ -1103,16 +1217,30 @@ public partial class QDayScript : Script
         }
     }
 
-    void ClearBriefcaseBlips()
+    /// <summary>True on the frame briefcase i is picked up. If its pickup failed to spawn, E at the spot opens it instead.</summary>
+    bool BriefcaseTaken(int i)
     {
-        for (int i = 0; i < briefcaseBlips.Length; i++) { briefcaseBlips[i]?.Delete(); briefcaseBlips[i] = null; }
+        var p = briefcasePickups[i];
+        if (p != null && p.Exists()) return p.IsCollected;
+        return EscapeUse(loc.Escape.Briefcases[i], "Press ~INPUT_CONTEXT~ to open the briefcase.");
+    }
+
+    void ClearBriefcases()
+    {
+        for (int i = 0; i < briefcaseBlips.Length; i++)
+        {
+            briefcaseBlips[i]?.Delete();
+            briefcaseBlips[i] = null;
+            if (briefcasePickups[i] != null && briefcasePickups[i].Exists()) briefcasePickups[i].Delete();
+            briefcasePickups[i] = null;
+        }
     }
 
     /// <summary>Where the current step's blip goes, and where F5 takes the player.</summary>
     Vector3 EscapeTarget() => escapeStep switch
     {
         EscapeStep.ToBank => loc.Escape.BankDoor,
-        EscapeStep.Vault => loc.Escape.Vault,
+        EscapeStep.Vault => vaultCashSpawned ? VaultTrolleyPos : loc.Escape.Vault,
         EscapeStep.Passport => loc.Escape.Briefcases[briefcaseBlips[0] != null ? 0 : 1],
         EscapeStep.WayOut => loc.Escape.WayOut,
         _ => loc.Escape.Pilot,
@@ -1329,7 +1457,8 @@ public class Locations
     {
         public string BankName, WayOutName;                       // as Lester and the objectives say them
         public string[] BriefcaseNames;                           // the two briefcases' places, as the objectives say them
-        public Vector3 BankDoor, VaultDoor, Vault, WayOut, Pilot;
+        public Vector3 BankDoor, VaultDoor, Vault, WayOut, Pilot, Plane;
+        public float PlaneHeading;
         public Vector3[] Briefcases;                              // two, both on the map during the passport step
     }
     public EscapeSites Escape;
@@ -1382,9 +1511,11 @@ public class Locations
             VaultDoor = new(148.03f, -1044.36f, 29.51f),   // GET_CLOSEST_OBJECT_OF_TYPE looks within 1 m of this
             Vault = new(146.9f, -1046.5f, 29.4f),
             BriefcaseNames = ["Forum Drive", "Grove Street"],
-            Briefcases = [new(-14.4f, -1442.0f, 31.1f), new(105.0f, -1940.0f, 20.8f)],
+            Briefcases = [new(-14.4f, -1442.0f, 30.5f), new(105.0f, -1940.0f, 20.25f)],
             WayOut = new(-1270.0f, -3010.0f, 13.9f),
             Pilot = new(-1276.0f, -3014.0f, 13.9f),
+            Plane = new(-1286.0f, -3020.0f, 13.9f),   // beside the pilot; position and heading not checked in game
+            PlaneHeading = 330.0f,
         },
     };
 }
