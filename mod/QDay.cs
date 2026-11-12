@@ -176,6 +176,9 @@ public partial class QDayScript : Script
         truck = null;
         chipProp = null;
         keypad = null;
+        ClearGuards();
+        if (guardGroupMade) { guardGroup.Remove(); guardGroupMade = false; }
+        Chaos.RemoveRelationships();
         Hack.Close();
         hackGate.Clear();
         TextureSwap.ReplacementEnabled = false;
@@ -457,7 +460,7 @@ public partial class QDayScript : Script
                     chipProp.AttachTo(truck, new(0f, -1f, 0.9f), new(0f, 0f, 90f));
 
                     keypad = World.CreateProp(new("prop_ld_keypad_01"), new(3624.6f, 3749.3f, 28.95f), new(0f, 0f, 145.5f), false, false);
-                    // TODO: spawn guard inside Humane Labs garage
+                    SpawnGuards("s_m_m_chemsec_01", WeaponHash.Pistol);
                     break;
                 case ChipFIB: // FIB
                     truck = World.CreateVehicle(VehicleHash.Boxville2, new(178.55f, -698.54f, 32.94f), 68.86f);
@@ -470,7 +473,7 @@ public partial class QDayScript : Script
                     chipProp = World.CreateProp(new("prop_military_pickup_01"), Vector3.Zero, false, false);
                     chipProp.AttachTo(truck, new(0f, -1.6f, 0.9f), new(0f, 0f, 90f));
                     hackGate.Spawn(HackLevel.FIB, loc.Chips[chipIndex], truck);
-                    // TODO: spawn FIB guards around the van
+                    SpawnGuards("s_m_m_fibsec_01", WeaponHash.CarbineRifle);
                     break;
                 case ChipMilitary: // Military
                     truck = World.CreateVehicle(VehicleHash.Mule3, loc.Chips[chipIndex].Pos, 0.0f);
@@ -483,6 +486,7 @@ public partial class QDayScript : Script
                     chipProp = World.CreateProp(new("prop_military_pickup_01"), Vector3.Zero, false, false);
                     chipProp.AttachTo(truck, new(0f, -1f, 0.9f), new(0f, 0f, 90f));
                     hackGate.Spawn(HackLevel.Zancudo, loc.Chips[chipIndex], truck);
+                    SpawnGuards("s_m_y_marine_01", WeaponHash.CarbineRifle);
                     break;
             }
 
@@ -534,6 +538,44 @@ public partial class QDayScript : Script
                 }
             }
         }
+    }
+
+    const int GuardCount = 4;
+    const float GuardRadius = 6f;
+    readonly List<Ped> guards = [];
+    RelationshipGroup guardGroup;
+    bool guardGroupMade;
+
+    void SpawnGuards(string model, WeaponHash weapon)
+    {
+        if (!guardGroupMade) { guardGroup = World.AddRelationshipGroup("QDAY_GUARDS"); guardGroupMade = true; }
+        guardGroup.SetRelationshipBetweenGroups(Game.Player.Character.RelationshipGroup, Relationship.Hate, true);
+
+        for (int i = 0; i < GuardCount; i++)
+        {
+            double a = 2 * Math.PI * i / GuardCount;
+            var at = truck.Position + new Vector3((float)Math.Cos(a) * GuardRadius, (float)Math.Sin(a) * GuardRadius, 0f);
+            var g = World.CreatePed(new(model), at, (float)(a * 180 / Math.PI) + 90f);   // facing outwards
+            if (g == null) { Log.Write($"guard {model} spawn failed"); continue; }
+            g.IsPersistent = true;
+            g.RelationshipGroup = guardGroup;
+            g.Weapons.Give(weapon, 500, true, true);
+            Function.Call(Hash.SET_PED_HAS_AI_BLIP, g, true);
+            Function.Call(Hash.TASK_START_SCENARIO_IN_PLACE, g, "WORLD_HUMAN_GUARD_STAND", 0, true);
+            guards.Add(g);
+        }
+        Log.Write($"guards: {guards.Count} x {model} round the truck");
+    }
+
+    void ClearGuards()
+    {
+        foreach (var g in guards)
+        {
+            if (g == null || !g.Exists()) continue;
+            Function.Call(Hash.SET_PED_HAS_AI_BLIP, g, false);
+            g.MarkAsNoLongerNeeded();
+        }
+        guards.Clear();
     }
 
     void TuneTruck()
@@ -717,6 +759,7 @@ public partial class QDayScript : Script
         truck = null;
         chipProp?.MarkAsNoLongerNeeded();
         chipProp = null;
+        ClearGuards();
     }
 
     // ---- Threshold: a fixed ThresholdSeconds; the Q-Day job was sent at the pitch -------
@@ -871,8 +914,8 @@ public partial class QDayScript : Script
     // TODO: the roadblock, guards/crowd at the bank, cash prop, the stretch-goal car.
     // The passport is in one of two briefcases, both on the map at once, so the player picks which to go to first. A quantum
     // coin toss (rng, the Q-Day job's numbers) decides whether the first one opened holds it; if not, its blip goes and the
-    // other one's is left, one more stop (TODO: and one more fight) before the plane.
-    enum EscapeStep { ToBank, Vault, Passport, WayOut, PayPilot }
+    // other one's is left, one more stop before the plane.
+    enum EscapeStep { ToBank, Vault, Passport, WayOut }
 
     const double QDayTitleSeconds = 5, QDayTitleMaxSeconds = 15;   // Q-Day hands over once the title is done, never later than the max
     EscapeStep escapeStep;
@@ -928,12 +971,14 @@ public partial class QDayScript : Script
             case EscapeStep.WayOut:
                 if (ped.Position.DistanceTo(e.WayOut) < 20f)
                 {
-                    if (pilot != null && pilot.Exists() && !pilot.IsDead) EscapeTo(EscapeStep.PayPilot);
+                    if (pilot != null && pilot.Exists() && !pilot.IsDead)
+                    {
+                      Screen.ShowSubtitle("Pay the ~b~pilot~s~.", 100);
+                      if (EscapeUse(pilot.Position, "Press ~INPUT_CONTEXT~ to pay the pilot."))
+                        GoTo(Phase.Ending);
+                    }
                     else GoTo(Phase.Ending);   // no pilot: the screen fades on arrival
                 }
-                break;
-            case EscapeStep.PayPilot:
-                if (pilot == null || !pilot.Exists() || EscapeUse(pilot.Position, "Press ~INPUT_CONTEXT~ to pay the pilot.")) GoTo(Phase.Ending);
                 break;
         }
     }
@@ -961,8 +1006,8 @@ public partial class QDayScript : Script
             EscapeStep.ToBank => "Get to the ~y~bank~s~.",
             EscapeStep.Vault => "Take the ~g~cash~s~.",
             EscapeStep.Passport => $"Your passport's in one of two ~y~briefcases~s~, at {e.BriefcaseNames[0]} or {e.BriefcaseNames[1]}.",
-            EscapeStep.WayOut => $"Get to ~y~{e.WayOutName}~s~.",
-            _ => "Pay the ~b~pilot~s~.",
+            EscapeStep.WayOut => $"Meet the ~b~pilot~s~ at the airport.",
+            _ => "",
         }, 8000);
 
         objectiveBlip?.Delete();
@@ -1081,6 +1126,14 @@ public static class Chaos
     };
     public static RelationshipGroup RiotGroup;
     static bool built;
+    /// <summary>Removes the riot's group, so the next run (or a script reload) makes it afresh.</summary>
+    public static void RemoveRelationships()
+    {
+        if (!built) return;
+        RiotGroup.Remove();
+        built = false;
+    }
+
     public static void EnsureRelationships()
     {
         if (!built) { RiotGroup = World.AddRelationshipGroup("QDAY_RIOT"); built = true; }
