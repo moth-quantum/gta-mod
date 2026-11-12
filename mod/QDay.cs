@@ -673,7 +673,12 @@ public partial class QDayScript : Script
             Screen.ShowSubtitle($"Get in the ~b~truck~s~.", 100);
         }
 
-        if (inTruck && ped.Position.DistanceTo(loc.Lab.Pos) < 12f) GoTo(Phase.Calibrating);
+        if (inTruck && ped.Position.DistanceTo(loc.Lab.Pos) < 12f)
+        {
+          ped.Task.LeaveVehicle();
+          truck.LockStatus = VehicleLockStatus.CannotEnter;
+          GoTo(Phase.Calibrating);
+        }
     }
 
     void EndDelivery()

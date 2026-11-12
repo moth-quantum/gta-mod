@@ -15,7 +15,7 @@ public sealed class HackGate
     const string TerminalModel = "prop_laptop_01a";
     const float UseRadius = 1.5f;                       // metres, measured flat, from the terminal
     const float UseHeight = 2f;                         // and no more than this above or below it
-    const string Objective = "Hack the ~y~terminal~s~ to release the truck.";
+    const string Objective = "Hack the ~g~terminal~s~ to release the truck.";
     const string HelpText = "Press ~INPUT_CONTEXT~ to hack the terminal.";
     const string SuccessSound = "Hack_Success", SuccessSoundSet = "DLC_HEIST_BIOLAB_PREP_HACKING_SOUNDS";   // name unconfirmed
     static readonly Color MarkerColor = Color.FromArgb(150, 255, 205, 0);
@@ -73,8 +73,6 @@ public sealed class HackGate
         if (wasOpen && !open) Screen.ShowSubtitle(Objective, 6000);   // closed without solving
         wasOpen = open;
         if (open) return false;
-
-        World.DrawMarker(MarkerType.VerticalCylinder, ground + new Vector3(0f, 0f, 0.02f), Vector3.Zero, Vector3.Zero, new Vector3(1.2f, 1.2f, 0.4f), MarkerColor);
 
         var ped = Game.Player.Character;
         if (ped.IsInVehicle() || ped.IsDead) return false;
