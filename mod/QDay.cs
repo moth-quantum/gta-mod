@@ -79,7 +79,6 @@ public partial class QDayScript : Script
     static readonly Locations loc = Locations.Default;
     readonly Atlas atlas;
     readonly bool debug;               // [General] Debug in scripts\QDay.ini: enables the F3-F9 playtest keys
-    readonly bool hideEscapeRoute;     // [General] HideEscapeRoute, only with Debug: no GPS line during the escape, the blip stays
 
     public QDayScript()
     {
@@ -107,8 +106,7 @@ public partial class QDayScript : Script
         Aborted += OnAborted;
         Interval = 0;
         debug = Settings.GetValue("General", "Debug", false);
-        hideEscapeRoute = debug && Settings.GetValue("General", "HideEscapeRoute", false);
-        Log.Write($"Q-DAY loaded. debug={debug} hideEscapeRoute={hideEscapeRoute}");
+        Log.Write($"Q-DAY loaded. debug={debug}");
 
         string startupMsg = "~b~Q-DAY~s~ loaded.~n~  go to the ~y~Q~s~ blip to start~n~  F10 abort";
         if (debug)
@@ -211,7 +209,7 @@ public partial class QDayScript : Script
         if (e.KeyCode == Keys.F5) DebugTeleport();
         if (e.KeyCode == Keys.F4) LockdownGame.DropTestWall();
         // F3 tries the next road switching variant on the last F4 wall, Shift+F3 stops and undoes it, Ctrl+F3 reads the nodes round the player.
-        if (e.KeyCode == Keys.F3) LockdownGame.RoadTestKey(e.Shift, e.Control, objectiveBlip, phase == Phase.Escape && hideEscapeRoute);
+        if (e.KeyCode == Keys.F3) LockdownGame.RoadTestKey(e.Shift, e.Control, objectiveBlip);
         // Else-ifs on the phase at the moment of the press: acting moves the phase on, so separate checks would chain one press through several phases.
         if (e.KeyCode == Keys.F6)
         {
@@ -242,7 +240,7 @@ public partial class QDayScript : Script
         {
             Phase.Idle => loc.Start.Pos,
             Phase.Heist => loc.Chips[chipIndex].Pos,
-            Phase.Escape => LockdownGame.LastStop(lockdown.Graph),
+            Phase.Escape => EscapeTarget(),
             _ => loc.Lab.Pos,
         };
         // In Delivery, first put the player back in the truck (story missions can yank them away), then bring the truck home.
@@ -522,7 +520,7 @@ public partial class QDayScript : Script
 
                     if (chipIndex == ChipMilitary)
                     {
-                      DisableTanks();
+                        DisableTanks();
                     }
                     break;
             }
@@ -782,19 +780,20 @@ public partial class QDayScript : Script
     // the arming pass regularly found nobody at all.
     const float ArmRadius = 150f;
 
-    const double RiotArmSeconds = 2, EscapeArmSeconds = 4;
+    const double RiotArmSeconds = 2;
 
     void TickQDay()
     {
         if (CheckForPlayerDeath()) return;
 
-        TickRiotWorld(RiotArmSeconds);
+        TickRiotWorld();
         Hud.Ticker(ticker);
-        if (Elapsed() > 300) GoTo(Phase.Escape);
+        // The escape starts straight after the title (script.md section 8); the riot carries on through it.
+        if (Elapsed() > QDayTitleMaxSeconds || (Elapsed() > QDayTitleSeconds && !QDayTitle.IsActive)) GoTo(Phase.Escape);
     }
 
     /// <summary>The riot's world state, kept up through Q-Day and the escape.</summary>
-    void TickRiotWorld(double armEverySeconds)
+    void TickRiotWorld()
     {
         // Money does not exist any more.
         Game.Player.Money = 0;
@@ -802,7 +801,7 @@ public partial class QDayScript : Script
         Function.Call(Hash.HIDE_HUD_COMPONENT_THIS_FRAME, 3);
 
         // Everyone goes mental: arm and enrage nearby peds on a timer, chosen by Atlas randomness.
-        if ((DateTime.UtcNow - lastArm).TotalSeconds > armEverySeconds)
+        if ((DateTime.UtcNow - lastArm).TotalSeconds > RiotArmSeconds)
         {
             lastArm = DateTime.UtcNow;
             // MUST come before the loop: EnsureRelationships is what creates the
@@ -816,7 +815,7 @@ public partial class QDayScript : Script
             foreach (var p in World.GetNearbyPeds(me, ArmRadius))
             {
                 candidates++;
-                if (p == me || !p.IsHuman || p.IsDead) continue;
+                if (p == me || !p.IsHuman || p.IsDead || p == pilot) continue;   // the riot leaves the escape's pilot alone
                 if (p.Weapons.Current.Hash == WeaponHash.Unarmed)
                 {
                     var w = Chaos.Weapons[rng.Next(Chaos.Weapons.Length)];
@@ -847,7 +846,8 @@ public partial class QDayScript : Script
 
     void EndQDay()
     {
-        TextureSwap.ReplacementEnabled = false;
+        // Nothing: the riot, its texture replacement and the ticker carry on into the escape.
+        // EndEscape switches the textures off, and going to Idle cleans up everything else.
     }
 
     void BuildTicker(AtlasResult r)
@@ -865,38 +865,162 @@ public partial class QDayScript : Script
         ticker.AddRange(lines);
     }
 
-    // ---- Escape: cross the city in lockdown (see Lockdown.cs) -------------------------
-    const float EscapeExitRadius = 40f;   // measured in 2D: the placeholder district heights are rough
+    // ---- Escape: the bank, the passport, the way out, through the riot (script.md section 9) ----
+    // Starts straight after the Q-Day title; the riot, the ticker and the lockdown's force fields carry on.
+    // Any car will do for the way out (script step 5), so it has no step of its own.
+    // TODO: the roadblock, guards/crowd at the bank, cash prop, the stretch-goal car.
+    // The passport is in one of two briefcases, both on the map at once, so the player picks which to go to first. A quantum
+    // coin toss (rng, the Q-Day job's numbers) decides whether the first one opened holds it; if not, its blip goes and the
+    // other one's is left, one more stop (TODO: and one more fight) before the plane.
+    enum EscapeStep { ToBank, Vault, Passport, WayOut, PayPilot }
+
+    const double QDayTitleSeconds = 5, QDayTitleMaxSeconds = 15;   // Q-Day hands over once the title is done, never later than the max
+    EscapeStep escapeStep;
+    readonly Blip[] briefcaseBlips = new Blip[2];   // Passport: one per briefcase not opened yet, null once opened
+    Ped pilot;
 
     void BeginEscape()
     {
-        if (!lockdown.Begin()) { GoTo(Phase.Ending); return; }
-        objectiveBlip = World.CreateBlip(LockdownGame.LastStop(lockdown.Graph));
-        objectiveBlip.Color = BlipColor.Yellow;
-        objectiveBlip.ShowRoute = !hideEscapeRoute;
-        if (hideEscapeRoute) Log.Write("DEBUG escape: route line hidden by HideEscapeRoute, stop blip kept");
-        LockdownGame.RaiseForceField(lockdown.Graph, lockdown.Layout);
-        LesterText("The city's locked down. Get out while there's still a road.");
+        if (lockdown.Begin()) LockdownGame.RaiseForceField(lockdown.Graph, lockdown.Layout);
+        EscapeTo(EscapeStep.ToBank, $"Every bank balance just hit zero. Cash is king. We broke the door codes on every major bank. Get to {loc.Escape.BankName} NOW.");
     }
 
     void TickEscape()
     {
         if (CheckForPlayerDeath()) return;
 
-        TickRiotWorld(EscapeArmSeconds);
-        if (debug) LockdownGame.DrawWalls(lockdown.Graph, lockdown.Layout);
-        LockdownGame.DrawHud(lockdown.Layout);
+        TickRiotWorld();
+        Hud.Ticker(ticker);
+        if (lockdown.Layout != null)
+        {
+            // if (debug) LockdownGame.DrawWalls(lockdown.Graph, lockdown.Layout);
+            LockdownGame.DrawHud(lockdown.Layout);
+        }
 
-        // TODO: the passport, briefcases and plane attach here. Until then, reaching the last stop ends the mission.
-        if (Game.Player.Character.Position.DistanceTo2D(LockdownGame.LastStop(lockdown.Graph)) < EscapeExitRadius)
-            GoTo(Phase.Ending);
+        var ped = Game.Player.Character;
+        bool onFoot = !ped.IsInVehicle();
+        var e = loc.Escape;
+        switch (escapeStep)
+        {
+            case EscapeStep.ToBank:
+                if (onFoot && ped.Position.DistanceTo(e.BankDoor) < 6f) EscapeTo(EscapeStep.Vault);
+                break;
+            case EscapeStep.Vault:
+                if (EscapeUse(e.Vault, "Press ~INPUT_CONTEXT~ to take the cash."))
+                    EscapeTo(EscapeStep.Passport, "Got it? Good. Now get your passport. We need to get out of here. I'll text you where the flight's leaving from as soon as I know. I'll see you on the other side.");
+                break;
+            case EscapeStep.Passport:
+                for (int i = 0; i < e.Briefcases.Length; i++)
+                {
+                    if (briefcaseBlips[i] == null || !EscapeUse(e.Briefcases[i], "Press ~INPUT_CONTEXT~ to open the briefcase.")) continue;
+                    int other = 1 - i;
+                    bool here = briefcaseBlips[other] == null || rng.Next(2) == 0;   // the second one opened always has it
+                    Log.Write($"escape: briefcase {i}, {e.BriefcaseNames[i]} ({(rng is AtlasRandom ? "Atlas" : "System.Random")}): passport {(here ? "in" : "not in")} it");
+                    if (here) { EscapeTo(EscapeStep.WayOut, $"Flight's leaving from {e.WayOutName}. The pilot only takes cash. Go."); break; }
+                    briefcaseBlips[i].Delete();
+                    briefcaseBlips[i] = null;
+                    briefcaseBlips[other].ShowRoute = true;
+                    LesterText($"Empty? Then it's in the other one, at {e.BriefcaseNames[other]}.");
+                    Screen.ShowSubtitle($"Get the other briefcase from ~y~{e.BriefcaseNames[other]}~s~.", 8000);
+                    break;
+                }
+                break;
+            case EscapeStep.WayOut:
+                if (ped.Position.DistanceTo(e.WayOut) < 20f)
+                {
+                    if (pilot != null && pilot.Exists() && !pilot.IsDead) EscapeTo(EscapeStep.PayPilot);
+                    else GoTo(Phase.Ending);   // no pilot: the screen fades on arrival
+                }
+                break;
+            case EscapeStep.PayPilot:
+                if (pilot == null || !pilot.Exists() || EscapeUse(pilot.Position, "Press ~INPUT_CONTEXT~ to pay the pilot.")) GoTo(Phase.Ending);
+                break;
+        }
     }
 
     void EndEscape()
     {
+        TextureSwap.ReplacementEnabled = false;   // on since BeginQDay
         LockdownGame.ClearForceField();
         objectiveBlip?.Delete();
         objectiveBlip = null;
+        ClearBriefcaseBlips();
+        pilot?.MarkAsNoLongerNeeded();
+        pilot = null;
+    }
+
+    /// <summary>Moves the escape on: Lester's line if any, the objective, and the blip.</summary>
+    void EscapeTo(EscapeStep step, string line = null)
+    {
+        Log.Write($"escape: {escapeStep} -> {step}");
+        escapeStep = step;
+        var e = loc.Escape;
+        if (line != null) LesterText(line);
+        Screen.ShowSubtitle(step switch
+        {
+            EscapeStep.ToBank => "Get to the ~y~bank~s~.",
+            EscapeStep.Vault => "Take the ~g~cash~s~.",
+            EscapeStep.Passport => $"Your passport's in one of two ~y~briefcases~s~, at {e.BriefcaseNames[0]} or {e.BriefcaseNames[1]}.",
+            EscapeStep.WayOut => $"Get to ~y~{e.WayOutName}~s~.",
+            _ => "Pay the ~b~pilot~s~.",
+        }, 8000);
+
+        objectiveBlip?.Delete();
+        objectiveBlip = null;
+        ClearBriefcaseBlips();
+
+        if (step == EscapeStep.WayOut)
+        {
+            pilot = World.CreatePed("s_m_m_pilot_01", e.Pilot);
+            pilot.IsInvincible = true;
+            pilot.BlockPermanentEvents = true;
+            objectiveBlip = pilot.AddBlip();
+            objectiveBlip.Sprite = BlipSprite.VIP;
+            objectiveBlip.Color = BlipColor.Blue;
+            objectiveBlip.ShowRoute = true;
+        }
+        else if (step == EscapeStep.Passport)
+        {
+            // Both briefcases, with no route: the player picks.
+            for (int i = 0; i < briefcaseBlips.Length; i++)
+            {
+                briefcaseBlips[i] = World.CreateBlip(e.Briefcases[i]);
+                briefcaseBlips[i].Sprite = BlipSprite.CaptureBriefcase;
+                briefcaseBlips[i].Color = BlipColor.Green;
+                briefcaseBlips[i].Scale = 0.8f;
+            }
+            return;
+        }
+        else
+        {
+            objectiveBlip = World.CreateBlip(EscapeTarget());
+            objectiveBlip.Color = BlipColor.Yellow;
+            objectiveBlip.ShowRoute = true;
+        }
+    }
+
+    void ClearBriefcaseBlips()
+    {
+        for (int i = 0; i < briefcaseBlips.Length; i++) { briefcaseBlips[i]?.Delete(); briefcaseBlips[i] = null; }
+    }
+
+    /// <summary>Where the current step's blip goes, and where F5 takes the player.</summary>
+    Vector3 EscapeTarget() => escapeStep switch
+    {
+        EscapeStep.ToBank => loc.Escape.BankDoor,
+        EscapeStep.Vault => loc.Escape.Vault,
+        EscapeStep.Passport => loc.Escape.Briefcases[briefcaseBlips[0] != null ? 0 : 1],
+        EscapeStep.WayOut => loc.Escape.WayOut,
+        _ => loc.Escape.Pilot,
+    };
+
+    /// <summary>On foot next to an E site: shows the help text, true on the frame E is pressed.</summary>
+    bool EscapeUse(Vector3 at, string help)
+    {
+        var ped = Game.Player.Character;
+        if (ped.IsInVehicle() || ped.Position.DistanceTo(at) > 1.8f) return false;
+        Screen.ShowHelpTextThisFrame(help);
+        return Game.IsControlJustPressed(GTA.Control.Context);
     }
 
     // ---- Ending: fade out, credit the hardware, back to Idle -------------------------
@@ -1087,6 +1211,16 @@ public class Locations
     public class Chip { public string Key, Label, Line, Objective; public Vector3 Pos; public int Wanted; public Vector3 HackPos; public float HackHeading; }
     public class Site { public string Name; public Vector3 Pos; }
     public Site Start, Lab; public List<Chip> Chips; public Site Ending;
+
+    /// <summary>The escape's stops (QDayScript.TickEscape). All placeholders, to verify in game: script.md section 9, "For Alejandro".</summary>
+    public class EscapeSites
+    {
+        public string BankName, WayOutName;                       // as Lester and the objectives say them
+        public string[] BriefcaseNames;                           // the two briefcases' places, as the objectives say them
+        public Vector3 BankDoor, Vault, WayOut, Pilot;
+        public Vector3[] Briefcases;                              // two, both on the map during the passport step
+    }
+    public EscapeSites Escape;
     // Each part's error-rate target, keyed by Chip.Key. It's kept out of Chip because feature/hack changes those lines; fold it in once that's merged.
     public Dictionary<string, double> Targets;
     public double Target(Chip chip) => Targets[chip.Key];
@@ -1125,6 +1259,19 @@ public class Locations
         {
             Name = "Vinewood sign",
             Pos = new(776.88f, 1175.61f, 345.96f)
+        },
+        // Placeholders from memory of the map, none checked in game yet. Bank: the Legion Square Fleeca. Briefcases: Forum Drive
+        // (Strawberry) and Grove Street. Way out: a hangar apron at LSIA (the airport gates and fence are unchecked; a helipad is the alternative).
+        Escape = new()
+        {
+            BankName = "the Fleeca by Legion Square",
+            WayOutName = "the airport",
+            BankDoor = new(150.3f, -1037.4f, 29.4f),
+            Vault = new(146.9f, -1046.5f, 29.4f),
+            BriefcaseNames = ["Forum Drive", "Grove Street"],
+            Briefcases = [new(-14.4f, -1442.0f, 31.1f), new(105.0f, -1940.0f, 20.8f)],
+            WayOut = new(-1270.0f, -3010.0f, 13.9f),
+            Pilot = new(-1276.0f, -3014.0f, 13.9f),
         },
     };
 }

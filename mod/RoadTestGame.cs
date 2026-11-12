@@ -41,16 +41,15 @@ public static class RoadTestGame
     static WallSegment wall;
     static RoadStretch applied;
     static Blip routeBlip, ownBlip;
-    static bool routeHidden;
 
     /// <summary>F3 next variant, Shift+F3 stop and undo, Ctrl+F3 read the nodes round the player and change nothing.</summary>
-    public static void Key(bool shift, bool control, Blip missionRoute, bool hideRoute)
+    public static void Key(bool shift, bool control, Blip missionRoute)
     {
         if (control) { ReadAroundPlayer(); return; }
         if (shift)
         {
             bool wasActive = run.Active;
-            var mission = routeHidden ? null : routeBlip;   // Clear forgets it
+            var mission = routeBlip;   // Clear forgets it
             Clear();
             if (!wasActive) Log.Write("DEBUG road test: nothing to stop");
             else if (mission != null && mission.Exists())
@@ -70,7 +69,6 @@ public static class RoadTestGame
                 return;
             }
             routeBlip = missionRoute != null && missionRoute.Exists() ? missionRoute : null;
-            routeHidden = hideRoute;
         }
         Do(run.Press(Game.GameTime));
     }
@@ -142,7 +140,6 @@ public static class RoadTestGame
     {
         get
         {
-            if (routeHidden) return null;
             if (ownBlip != null && ownBlip.Exists()) return ownBlip;
             return routeBlip != null && routeBlip.Exists() ? routeBlip : null;
         }
@@ -171,8 +168,7 @@ public static class RoadTestGame
         foreach (var n in nodes)
             Log.Write($"road test: node {n.Id} at {n.Position.X:0.0}, {n.Position.Y:0.0}, {n.Position.Z:0.0}: {far.Along(n.Position.X, n.Position.Y):0.0} m along, {far.Across(n.Position.X, n.Position.Y):0.0} m across, switched off {n.First}");
 
-        if (routeHidden) Log.Write("road test: route line is hidden by HideEscapeRoute, so no route is set");
-        else if (routeBlip != null) Log.Write("road test: using the mission's route");
+        if (routeBlip != null) Log.Write("road test: using the mission's route");
         else
         {
             var ahead = new Vector3(wall.CentreX + wall.NormalX * OwnRouteAhead, wall.CentreY + wall.NormalY * OwnRouteAhead, wall.Z);
@@ -216,7 +212,6 @@ public static class RoadTestGame
 
     static string Route(string what)
     {
-        if (routeHidden) return $"{what}: hidden";
         return $"{what}: found {Function.Call<bool>(Hash.GET_GPS_BLIP_ROUTE_FOUND)}, length {Function.Call<int>(Hash.GET_GPS_BLIP_ROUTE_LENGTH)}";
     }
 

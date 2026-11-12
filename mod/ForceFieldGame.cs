@@ -2,7 +2,7 @@
 // in ForceField.cs. Calls natives, so script thread only.
 //
 // The wall colour comes from R_lut only, by way of EntanglementTable. Nothing here picks a colour.
-// Blips and looped particles outlive the script, so Clear has to run on every way out.
+// Blips outlive the script, so Clear has to run on every way out. Particles are one-shot bursts where the player hits a wall.
 //
 // Unverified until seen in game: the particle name and whether it takes a tint, DRAW_POLY on rotated
 // quads, and whether velocity holds a ped. docs/forcefield-test.md covers each. Also unverified (11 Nov
@@ -23,12 +23,11 @@ namespace QDay;
 
 public static class ForceFieldGame
 {
-    const string ParticleAsset = "core";
-    const string ParticleName = "ent_amb_elec_crackle";
-    const int ParticlesPerWall = 3;
+    const string ParticleAsset = "veh_xs_vehicle_mods";
+    const string ParticleName = "exp_xs_mine_kinetic";
     const float ParticleScale = 1f;
     const float ParticleLift = 1f;                 // metres above the road
-    const int ParticleRetryMs = 5000;
+    const int ParticleGapMs = 400;                 // a held accelerator pushes every few ticks; one burst per this long
     const float RemoveMargin = 20f;                // metres past the radius before removal, so nothing flickers on the boundary
     const int RagdollMs = 1200;
     const int RagdollGapMs = 2000;
@@ -44,9 +43,8 @@ public static class ForceFieldGame
         public readonly WallSegment Segment = ForceField.Segment(wall);
         public readonly WallTrack Track = new();
         public readonly bool Test = test;
-        public readonly List<ParticleEffect> Particles = [];
         public Blip Blip;
-        public int NextParticleTry;
+        public Color Colour = Color.White;         // the colour it was last drawn in, for the hit burst
     }
 
     static readonly List<Site> sites = [];
@@ -62,7 +60,7 @@ public static class ForceFieldGame
     const int PlainTimeoutMs = 10000;
     static int plainRequestedAt = -1;
     static bool plainReady, plainGaveUp;
-    static int nextRagdoll, nextPushLog;
+    static int nextRagdoll, nextPushLog, nextParticle;
     static bool particleFailureLogged;
 
     /// <summary>Null with the reason logged if the embedded table is bad. The walls still push, but aren't drawn: no colour is made up.</summary>
@@ -118,13 +116,6 @@ public static class ForceFieldGame
     {
         site.Blip?.Delete();
         site.Blip = null;
-        StopParticles(site);
-    }
-
-    static void StopParticles(Site site)
-    {
-        foreach (var p in site.Particles) p?.Delete();
-        site.Particles.Clear();
     }
 
     /// <summary>Debug only: a wall across the way the player is facing, going through ForceField.Segment like any other.</summary>
@@ -199,19 +190,17 @@ public static class ForceFieldGame
             if (dist > ForceField.CheckRadius)
             {
                 site.Track.Forget();
-                if (dist > ForceField.CheckRadius + RemoveMargin) StopParticles(site);
                 continue;
             }
 
             var result = ForceField.Step(site.Segment, site.Track, inVehicle ? ForceField.Vehicle : ForceField.OnFoot, pos.X, pos.Y, pos.Z, vel.X, vel.Y);
-            if (result.Kind != PushKind.None) Apply(result, ped, mover, inVehicle, ref pos, ref vel);
-
-            if (table != null && drawn.Exists(e => e.site == site))
+            if (result.Kind != PushKind.None)
             {
-                var middle = Draw(site, cam);
-                UpdateParticles(site, middle);
+                Burst(site, pos);   // before Apply moves the player, so it's level with where they hit
+                Apply(result, ped, mover, inVehicle, ref pos, ref vel);
             }
-            else StopParticles(site);   // not drawn this tick, so no crackle on an invisible wall
+
+            if (table != null && drawn.Exists(e => e.site == site)) site.Colour = Draw(site, cam);
         }
     }
 
@@ -386,11 +375,12 @@ public static class ForceFieldGame
         if (site.Blip == null && dist <= ForceField.BlipRadius)
         {
             site.Blip = World.CreateBlip(new Vector3(site.Segment.CentreX, site.Segment.CentreY, site.Segment.Z));
-            site.Blip.Sprite = BlipSprite.Standard;
-            site.Blip.Color = BlipColor.Blue;
-            site.Blip.Scale = 0.7f;
+            site.Blip.Sprite = BlipSprite.CrossTheLine;
+            site.Blip.Color = BlipColor.GreyDark;
+            site.Blip.Scale = 1.0f;
             site.Blip.IsShortRange = true;
-            site.Blip.Name = "Sealed road";
+            site.Blip.Name = "Sealed Road";
+            site.Blip.RotationFloat = site.Wall.Heading;
         }
         else if (site.Blip != null && dist > ForceField.BlipRadius + RemoveMargin)
         {
@@ -399,30 +389,26 @@ public static class ForceFieldGame
         }
     }
 
-    static void UpdateParticles(Site site, Color colour)
+    /// <summary>A one-shot burst on the wall, at the point nearest the player, tinted to the wall's colour. At most one per ParticleGapMs.</summary>
+    static void Burst(Site site, Vector3 at)
     {
-        if (site.Particles.Count == 0 && Game.GameTime >= site.NextParticleTry) StartParticles(site);
-        foreach (var p in site.Particles)
-            if (p != null) p.Color = colour;
-    }
-
-    static void StartParticles(Site site)
-    {
-        site.NextParticleTry = Game.GameTime + ParticleRetryMs;
+        if (Game.GameTime < nextParticle) return;
         asset.Request();
-        if (!asset.IsLoaded) return;   // the next try picks it up
+        if (!asset.IsLoaded) return;   // the next hit picks it up
+        nextParticle = Game.GameTime + ParticleGapMs;
 
-        var s = site.Segment;
-        for (int i = 0; i < ParticlesPerWall; i++)
+        // The point on the wall nearest the player.
+        var w = site.Segment;
+        float dx = w.BX - w.AX, dy = w.BY - w.AY, len2 = dx * dx + dy * dy;
+        float f = len2 > 0f ? Math.Max(0f, Math.Min(1f, ((at.X - w.AX) * dx + (at.Y - w.AY) * dy) / len2)) : 0.5f;
+
+        var c = site.Colour;
+        Function.Call(Hash.SET_PARTICLE_FX_NON_LOOPED_COLOUR, c.R / 255f, c.G / 255f, c.B / 255f);
+        if (!World.CreateParticleEffectNonLooped(asset, ParticleName, new Vector3(w.PointX(f), w.PointY(f), w.Z + ParticleLift), Vector3.Zero, ParticleScale)
+            && !particleFailureLogged)
         {
-            float f = (i + 0.5f) / ParticlesPerWall;
-            var effect = World.CreateParticleEffect(asset, ParticleName, new Vector3(s.PointX(f), s.PointY(f), s.Z + ParticleLift), Vector3.Zero, ParticleScale);
-            if (effect != null) site.Particles.Add(effect);
-            else if (!particleFailureLogged)
-            {
-                particleFailureLogged = true;
-                Log.Write($"forcefield: could not start particle {ParticleAsset}/{ParticleName}");
-            }
+            particleFailureLogged = true;
+            Log.Write($"forcefield: could not start particle {ParticleAsset}/{ParticleName}");
         }
     }
 }

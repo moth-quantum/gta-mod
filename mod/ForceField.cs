@@ -95,8 +95,8 @@ public static class ForceField
     /// <summary>The alpha under light L: the light thickens the haze where it falls. Capped at 255.</summary>
     public static int LitAlpha(int alpha, float light) => Math.Min(255, (int)Math.Round(alpha * 1.55 * (0.5 + 0.9 * light)));
 
-    public static readonly Mover Vehicle = new(6f, 5f, 1.5f, 6f);
-    public static readonly Mover OnFoot = new(1.5f, 1.5f, 0.5f, 3f);
+    public static readonly Mover Vehicle = new(2f, 5f, 1.5f, 6f);
+    public static readonly Mover OnFoot = new(1f, 1.5f, 0.5f, 3f);
 
     /// <summary>The direction a GTA heading points: 0 is +Y (north), and it turns counter-clockwise, so 90 is -X (west).</summary>
     public static (float x, float y) Forward(float headingDegrees)
