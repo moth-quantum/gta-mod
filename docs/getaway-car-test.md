@@ -12,7 +12,7 @@ Build `mod/`, copy `bin/QDay.dll` to `scripts\`, set `Debug = true` in `QDay.ini
 
 When the player opens the briefcase that holds the passport, a Jester (racecar, `Jester2`) appears on the road nearest that briefcase, with a blue sports car blip named `Getaway car`, its engine running and its neon on. Its paint changes with the angle between the camera and the car: purple and green head-on, through red and orange, to silver and white side on, easing rather than stepping. The secondary coat and the pearl layer follow the same table a little further on, and the neon matches the body. The blip goes once the player gets in. Taking it is optional: any car still gets the player to the airport. The car isn't deleted at the end, so it doesn't vanish as the ending fades.
 
-The livery isn't part of this pull request. The car shows livery 0, so if TextureSwap replaces that livery texture with `recorded/getaway_livery/qblur_livery.png` (from the Quantum Paint repo, a 1024 x 1024 PNG, not embedded or converted to DDS yet), it should appear on this car.
+The livery image is in this pull request, but not the swap. The car shows livery 0, so if TextureSwap replaces that livery texture with `recorded/getaway_livery/qblur_livery.png` (from the Quantum Paint repo, a 1024 x 1024 PNG, not embedded or converted to DDS yet), it should appear on this car.
 
 ## Checks
 
