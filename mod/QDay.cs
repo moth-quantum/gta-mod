@@ -675,9 +675,9 @@ public partial class QDayScript : Script
 
         if (inTruck && ped.Position.DistanceTo(loc.Lab.Pos) < 12f)
         {
-          ped.Task.LeaveVehicle();
-          truck.LockStatus = VehicleLockStatus.CannotEnter;
-          GoTo(Phase.Calibrating);
+            ped.Task.LeaveVehicle();
+            truck.LockStatus = VehicleLockStatus.CannotEnter;
+            GoTo(Phase.Calibrating);
         }
     }
 
@@ -927,6 +927,56 @@ public partial class QDayScript : Script
     readonly Blip[] briefcaseBlips = new Blip[2];   // Passport: one per briefcase not opened yet, null once opened
     Ped pilot;
 
+    // The Fleeca vault door, swung open by turning it -80 degrees on Z over VaultDoorSeconds, with the heist's unlock sound.
+    const string VaultDoorModel = "v_ilev_gb_vauldr";
+    const float VaultDoorTurn = -80f;
+    const double VaultDoorSeconds = 4;
+    Prop vaultDoor;                    // set while the door is opening
+    Vector3 vaultDoorShut;             // its rotation before opening
+    DateTime vaultDoorStarted;
+
+    /// <summary>Starts the door opening. False if there's no vault door at Escape.VaultDoor.</summary>
+    bool OpenVaultDoor()
+    {
+        var d = loc.Escape.VaultDoor;
+        var door = Function.Call<Prop>(Hash.GET_CLOSEST_OBJECT_OF_TYPE, d.X, d.Y, d.Z, 1.0f, Game.GenerateHash(VaultDoorModel), true, false, false);
+        if (door == null || !door.Exists()) { Log.Write($"escape: no {VaultDoorModel} near {d}"); return false; }
+
+        Function.Call(Hash.FREEZE_ENTITY_POSITION, door, true);
+        Function.Call(Hash.REQUEST_SCRIPT_AUDIO_BANK, "vault_door", false, -1);
+        var p = door.Position;
+        Function.Call(Hash.PLAY_SOUND_FROM_COORD, -1, "vault_unlock", p.X, p.Y, p.Z, "dlc_heist_fleeca_bank_door_sounds", false, 0, false);
+        vaultDoor = door;
+        vaultDoorShut = door.Rotation;
+        vaultDoorStarted = DateTime.UtcNow;
+        Log.Write("escape: vault door opening");
+        return true;
+    }
+
+    /// <summary>Call every tick while the door opens: turns it a little further. True once it's fully open.</summary>
+    bool TickVaultDoor()
+    {
+        if (!vaultDoor.Exists()) return true;
+        double t = Math.Min(1.0, (DateTime.UtcNow - vaultDoorStarted).TotalSeconds / VaultDoorSeconds);
+        float eased = (float)(t * t * (3 - 2 * t));   // starts and stops gently, like a heavy door
+        var r = vaultDoorShut;
+        Function.Call(Hash.SET_ENTITY_ROTATION, vaultDoor, r.X, r.Y, r.Z + VaultDoorTurn * eased, 2, true);
+        return t >= 1.0;
+    }
+
+    void VaultOpened()
+    {
+        ReleaseVaultDoor();
+        EscapeTo(EscapeStep.Passport, "Got it? Good. Now get your passport. We need to get out of here. I'll text you where the flight's leaving from as soon as I know. I'll see you on the other side.");
+    }
+
+    void ReleaseVaultDoor()
+    {
+        if (vaultDoor == null) return;
+        vaultDoor = null;
+        Function.Call(Hash.RELEASE_NAMED_SCRIPT_AUDIO_BANK, "vault_door");
+    }
+
     void BeginEscape()
     {
         if (lockdown.Begin()) LockdownGame.RaiseForceField(lockdown.Graph, lockdown.Layout);
@@ -954,8 +1004,11 @@ public partial class QDayScript : Script
                 if (onFoot && ped.Position.DistanceTo(e.BankDoor) < 6f) EscapeTo(EscapeStep.Vault);
                 break;
             case EscapeStep.Vault:
-                if (EscapeUse(e.Vault, "Press ~INPUT_CONTEXT~ to take the cash."))
-                    EscapeTo(EscapeStep.Passport, "Got it? Good. Now get your passport. We need to get out of here. I'll text you where the flight's leaving from as soon as I know. I'll see you on the other side.");
+                // E opens the vault door; the step moves on once the door has finished opening.
+                if (vaultDoor == null && EscapeUse(e.Vault, "Press ~INPUT_CONTEXT~ to take the cash.") && !OpenVaultDoor())
+                    VaultOpened();   // no door found: don't hold the player up
+                else if (vaultDoor != null && TickVaultDoor())
+                    VaultOpened();
                 break;
             case EscapeStep.Passport:
                 for (int i = 0; i < e.Briefcases.Length; i++)
@@ -978,9 +1031,9 @@ public partial class QDayScript : Script
                 {
                     if (pilot != null && pilot.Exists() && !pilot.IsDead)
                     {
-                      Screen.ShowSubtitle("Pay the ~b~pilot~s~.", 100);
-                      if (EscapeUse(pilot.Position, "Press ~INPUT_CONTEXT~ to pay the pilot."))
-                        GoTo(Phase.Ending);
+                        Screen.ShowSubtitle("Pay the ~b~pilot~s~.", 100);
+                        if (EscapeUse(pilot.Position, "Press ~INPUT_CONTEXT~ to pay the pilot."))
+                            GoTo(Phase.Ending);
                     }
                     else GoTo(Phase.Ending);   // no pilot: the screen fades on arrival
                 }
@@ -995,6 +1048,7 @@ public partial class QDayScript : Script
         objectiveBlip?.Delete();
         objectiveBlip = null;
         ClearBriefcaseBlips();
+        ReleaseVaultDoor();
         pilot?.MarkAsNoLongerNeeded();
         pilot = null;
     }
@@ -1275,7 +1329,7 @@ public class Locations
     {
         public string BankName, WayOutName;                       // as Lester and the objectives say them
         public string[] BriefcaseNames;                           // the two briefcases' places, as the objectives say them
-        public Vector3 BankDoor, Vault, WayOut, Pilot;
+        public Vector3 BankDoor, VaultDoor, Vault, WayOut, Pilot;
         public Vector3[] Briefcases;                              // two, both on the map during the passport step
     }
     public EscapeSites Escape;
@@ -1325,6 +1379,7 @@ public class Locations
             BankName = "the Fleeca by Legion Square",
             WayOutName = "the airport",
             BankDoor = new(150.3f, -1037.4f, 29.4f),
+            VaultDoor = new(148.03f, -1044.36f, 29.51f),   // GET_CLOSEST_OBJECT_OF_TYPE looks within 1 m of this
             Vault = new(146.9f, -1046.5f, 29.4f),
             BriefcaseNames = ["Forum Drive", "Grove Street"],
             Briefcases = [new(-14.4f, -1442.0f, 31.1f), new(105.0f, -1940.0f, 20.8f)],
