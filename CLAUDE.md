@@ -11,6 +11,7 @@ Read README.md first, then log/MORNING.md for what broke and why. PLAN.md sectio
 - `tools/remote-box/`   Mac-side helpers for driving a cloud PC by keystrokes
 - `mod/Lockdown.cs`, `mod/LockdownRun.cs` escape lockdown logic and one run's state, free of game types; `mod/LockdownGame.cs` draws it; `mod/lockdown_districts.json` is the district file the game embeds, generated from the game's roads (format in `docs/lockdown-districts.md`)
 - `mod/ForceField.cs` force field logic and colour lookup, free of game types; `mod/ForceFieldGame.cs` draws and pushes; `docs/forcefield-test.md` is the in-game test. The colour comes from `R_lut` only (`T_lut` is baked but unused)
+- `mod/QuantumPaint.cs` the getaway car's paint (the Quantum Paint mod's PEAKED table, by viewing angle), free of game types; `mod/GetawayCar.cs` spawns and paints the car; `docs/getaway-car-test.md` is the in-game test
 - `mod/RoadTest.cs` logic and `mod/RoadTestGame.cs` natives for the Debug-only road switching experiment on F4 walls (`docs/forcefield-test.md` section G). The mission doesn't use it
 - `tools/bake_entanglement.py` bakes `recorded/entanglement_lut.bin` from `entanglement-shader-v1`, keeping the raw ZIP beside it. Offline only: the game never calls that engine
 - `tools/bake_qpam_light.py` bakes the force field's QPAM light, `recorded/forcefield_light/light_0..7.png`, on Qiskit Aer (needs qiskit and qiskit-aer). Offline only; the DLL embeds the PNGs and the light is carried by the triangles' corner colours, as GTA single player can't make a texture from a file

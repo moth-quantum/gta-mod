@@ -19,6 +19,7 @@
     <Compile Include="..\..\mod\Lockdown.cs" Link="Lockdown.cs" />
     <Compile Include="..\..\mod\LockdownRun.cs" Link="LockdownRun.cs" />
     <Compile Include="..\..\mod\ForceField.cs" Link="ForceField.cs" />
+    <Compile Include="..\..\mod\QuantumPaint.cs" Link="QuantumPaint.cs" />
     <Compile Include="..\..\mod\RoadTest.cs" Link="RoadTest.cs" />
     <Compile Include="..\..\mod\Atlas.cs" Link="Atlas.cs" />
     <Compile Include="..\..\mod\QDayLibrary.cs" Link="QDayLibrary.cs" />

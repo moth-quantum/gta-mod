@@ -189,6 +189,7 @@ public partial class QDayScript : Script
         pilot = null;
         plane?.MarkAsNoLongerNeeded();
         plane = null;
+        GetawayCar.Clear();
         TextureSwap.ReplacementEnabled = false;
     }
 
@@ -936,8 +937,9 @@ public partial class QDayScript : Script
 
     // ---- Escape: the bank, the passport, the way out, through the riot (script.md section 9) ----
     // Starts straight after the Q-Day title; the riot, the ticker and the lockdown's force fields carry on.
-    // Any car will do for the way out (script step 5), so it has no step of its own.
-    // TODO: the roadblock, guards/crowd at the bank, the stretch-goal car.
+    // Any car will do for the way out (script step 5), so it has no step of its own; the stretch-goal car (GetawayCar, the
+    // Quantum Paint mod's paint) is parked on the road by the briefcase that held the passport, for the player to take or not.
+    // TODO: the roadblock, guards/crowd at the bank.
     // The passport is in one of two briefcases, both on the map at once, so the player picks which to go to first. A quantum
     // coin toss (rng, the Q-Day job's numbers) decides whether the first one opened holds it; if not, its blip goes and the
     // other one's is left, one more stop before the plane.
@@ -1080,6 +1082,8 @@ public partial class QDayScript : Script
             LockdownGame.DrawHud(lockdown.Layout);
         }
 
+        GetawayCar.Tick();
+
         var ped = Game.Player.Character;
         bool onFoot = !ped.IsInVehicle();
         var e = loc.Escape;
@@ -1117,7 +1121,12 @@ public partial class QDayScript : Script
                     int other = 1 - i;
                     bool here = briefcaseBlips[other] == null || rng.Next(2) == 0;   // the second one opened always has it
                     Log.Write($"escape: briefcase {i}, {e.BriefcaseNames[i]} ({(rng is AtlasRandom ? "Atlas" : "System.Random")}): passport {(here ? "in" : "not in")} it");
-                    if (here) { EscapeTo(EscapeStep.WayOut, $"Flight's leaving from {e.WayOutName}. The pilot only takes cash. Go."); break; }
+                    if (here)
+                    {
+                        GetawayCar.Spawn(e.Briefcases[i]);
+                        EscapeTo(EscapeStep.WayOut, $"Flight's leaving from {e.WayOutName}. The pilot only takes cash. Go.");
+                        break;
+                    }
                     briefcaseBlips[i].Delete();
                     briefcaseBlips[i] = null;
                     briefcasePickups[i] = null;   // collected: the game has removed it
@@ -1155,6 +1164,7 @@ public partial class QDayScript : Script
         pilot = null;
         plane?.MarkAsNoLongerNeeded();   // not deleted: it would vanish in front of the player as the ending fades
         plane = null;
+        GetawayCar.Clear();   // likewise not deleted, and the player may be in it
     }
 
     /// <summary>Moves the escape on: Lester's line if any, the objective, and the blip.</summary>
