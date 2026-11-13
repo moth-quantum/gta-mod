@@ -23,7 +23,7 @@ Press F7 to jump to Q-Day, then F6 to skip the riot.
 6. **Bank use:** after F7 the log says the escape will use the recorded bank, and no `graph-v1` job is submitted.
 7. **HUD panel:** it sits under the main panel without overlapping it, and shows `lockdown simulation  aer`, `targets  recorded bank`, `layout k of 20` and the job ID. Check the full job ID fits. There should be no percentages and no mention of a breach, since repairs go to the log only.
 8. **Markers:** blue columns appear at sealed borders. Their heights come from unchecked placeholder data, so they may sit underground or float. To compare a few with the log, take the logged bitstring: character 0 is district 0, and a link is sealed when its two districts have different characters.
-9. **A route exists:** from Lester's house, drive to Strawberry, Rockford Hills, Banning and LSIA without crossing a marker. Nothing physically blocks the car yet and the placeholder walls aren't at real junctions, so this is only a rough check.
+9. **A route exists:** from Jay's house, drive to Strawberry, Rockford Hills, Banning and LSIA without crossing a marker. Nothing physically blocks the car yet and the placeholder walls aren't at real junctions, so this is only a rough check.
 10. **Temporary exit:** press F5 to teleport to the last stop, or drive there, and the mission should end within 40 m. Check the blip and GPS route look right, as the LSIA centre is a rough guess.
 11. **Ending credit:** it still names `ibm_marrakesh`, never `aer`.
 

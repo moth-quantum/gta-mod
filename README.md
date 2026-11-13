@@ -1,6 +1,6 @@
 # Q-DAY
 
-A mission for GTA V, built with Claude Code. You help Lester build a quantum computer, it breaks the world's encryption, money stops existing and Los Santos turns on itself.
+A mission for GTA V, built with Claude Code. You help Jay build a quantum computer, it breaks the world's encryption, money stops existing and Los Santos turns on itself.
 
 The quantum computer is real: every error rate on screen comes from an Atlas job, and Q-Day itself is a job on IBM quantum hardware whose random numbers decide how the riot plays out.
 
@@ -29,7 +29,7 @@ With `Debug = true`, F2 also opens the current heist's hacking minigame from any
 To change the mission, edit `mod/QDay.cs`, rebuild (`dotnet build` in `mod/`), and copy `mod/bin/QDay.dll` into the game's `scripts` folder.
 
 ## How the Q-Day job runs
-The Q-Day job (comet-qrng-v1, 64 qubits on IBM hardware) is sent when the mission starts, at Lester's pitch, and runs in the background through the heists. The threshold is a fixed 10 seconds. If the job is back by then, the riot runs on its random numbers. If not, or with no key, or in offline mode, the mod picks one of the recorded runs in `recorded/` at random and starts reading its numbers from a random point, so the riot and the leak ticker still come from real IBM random numbers and differ between plays. `mod/QDayPrefetch.cs` and `mod/QDayLibrary.cs` hold this logic.
+The Q-Day job (comet-qrng-v1, 64 qubits on IBM hardware) is sent when the mission starts, at Jay's pitch, and runs in the background through the heists. The threshold is a fixed 10 seconds. If the job is back by then, the riot runs on its random numbers. If not, or with no key, or in offline mode, the mod picks one of the recorded runs in `recorded/` at random and starts reading its numbers from a random point, so the riot and the leak ticker still come from real IBM random numbers and differ between plays. `mod/QDayPrefetch.cs` and `mod/QDayLibrary.cs` hold this logic.
 
 ## Recording more Q-Day runs
 `tools/record_qday.py` (Python 3, standard library only) runs one Q-Day job and saves it to `recorded/qrng_qpu_64q_<backend>_<date>_<n>.json`:

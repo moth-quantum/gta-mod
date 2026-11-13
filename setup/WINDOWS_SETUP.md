@@ -32,7 +32,7 @@ Open `scripts\QDay.ini` in the game folder and set:
 Only edit the game's copy. Never put the key in the repo's `mod\QDay.ini`.
 
 ## 6. Play
-Press Play in Steam. In story mode, wait for "Q-DAY loaded", then walk to the yellow **Q** blip at Lester's house and press **E** (the context button) when the prompt appears.
+Press Play in Steam. In story mode, wait for "Q-DAY loaded", then walk to the yellow **Q** blip at Jay's house and press **E** (the context button) when the prompt appears.
 
 | Key | Does |
 | --- | --- |

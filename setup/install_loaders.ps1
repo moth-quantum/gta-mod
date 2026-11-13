@@ -46,4 +46,4 @@ if (-not (Test-Path "$game\scripts\QDay.ini")) { Copy-Item "$src\mod\QDay.ini" "
 L "Q-DAY mod copied"
 Get-ChildItem $game -Filter '*.dll' | Where-Object Name -match 'ScriptHook|dinput8' | ForEach-Object { L ("  {0}  {1}" -f $_.Name, $_.Length) }
 Get-ChildItem "$game\scripts" | ForEach-Object { L ("  scripts\{0}  {1}" -f $_.Name, $_.Length) }
-L "DONE. Launch Legacy from Steam, log into the Rockstar Launcher, story mode, walk to the yellow Q blip at Lester's and press E."
+L "DONE. Launch Legacy from Steam, log into the Rockstar Launcher, story mode, walk to the yellow Q blip at Jay's and press E."

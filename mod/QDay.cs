@@ -3,7 +3,7 @@
 // Every number on the HUD comes from Moth Atlas (see Atlas.cs).
 //
 // Build: dotnet build   ->   bin/QDay.dll   ->   GTAV/scripts/QDay.dll
-// In game: walk to the Q blip at Lester's and press E (INPUT_CONTEXT) to start, Insert reloads SHVDN scripts.
+// In game: walk to the Q blip at Jay's and press E (INPUT_CONTEXT) to start, Insert reloads SHVDN scripts.
 // Log: GTAV/scripts/QDay.log (our own) and GTAV/ScriptHookVDotNet.log (SHVDN's).
 
 using System;
@@ -378,7 +378,7 @@ public partial class QDayScript : Script
         Screen.ShowSubtitle("~r~Mission failed.~s~ Go back to the ~y~Q~s~ blip to start again.", 6000);
     }
 
-    // ---- Pitch: Lester explains the machine ------------------------------------------
+    // ---- Pitch: Jay explains the machine ------------------------------------------
     // Early story missions (Franklin and Lamar, Repossession, Chop) fail the moment the player leaves,
     // which snaps them back to a checkpoint. Q-DAY switches them off while it runs.
     // Controllers first, so nothing is left to notice the mission ending and show "Mission failed".
@@ -399,7 +399,7 @@ public partial class QDayScript : Script
         "If I get the error rate under 2%, it starts fixing its own mistakes. Then it opens everything.",
         "All I need is a fridge colder than outer space, a better command system and a better chip. I know where all three are. You in?",
     ];
-    const double PitchLineSeconds = 3.5;   // between Lester's texts
+    const double PitchLineSeconds = 3.5;   // between Jay's texts
     const double PitchCardSeconds = 5;     // the Q-DAY card's subtitle, before the first heist's objective replaces it
     int pitchLinesSent;
     bool pitchCardShown;
@@ -418,14 +418,14 @@ public partial class QDayScript : Script
         if (CheckForPlayerDeath()) return;
 
         double t = Elapsed();
-        if (pitchLinesSent < PitchLines.Length && t >= pitchLinesSent * PitchLineSeconds) LesterText(PitchLines[pitchLinesSent++]);
+        if (pitchLinesSent < PitchLines.Length && t >= pitchLinesSent * PitchLineSeconds) JayText(PitchLines[pitchLinesSent++]);
         double cardAt = PitchLines.Length * PitchLineSeconds;
         if (!pitchCardShown && t >= cardAt) { pitchCardShown = true; Hud.BigMessage("Q-DAY", "build a fault-tolerant quantum computer"); }
         if (t > cardAt + PitchCardSeconds) GoTo(Phase.Heist);
     }
 
-    /// <summary>One of Lester's lines, as a text on the phone.</summary>
-    static void LesterText(string text) => Notification.Show(NotificationIcon.Lester, "Lester", "Q-Day", text);
+    /// <summary>One of Jay's lines, as a text on the phone.</summary>
+    static void JayText(string text) => Notification.Show(NotificationIcon.Lester, "Jay", "Q-Day", text);
 
     // ---- Heist: go to the current chip --------------------------------------------
     void BeginHeist()
@@ -436,7 +436,7 @@ public partial class QDayScript : Script
         objectiveBlip.Color = BlipColor.Yellow;
         objectiveBlip.ShowRoute = true;
         heistSceneSpawned = false;
-        if (!partAttempted) LesterText(chip.Line);   // not again on a retry of the same part
+        if (!partAttempted) JayText(chip.Line);   // not again on a retry of the same part
         Screen.ShowSubtitle(chip.Objective, 6000);
         Log.Write($"heist {chipIndex} -> {chip.Label} at {chip.Pos}{(partAttempted ? ", retry" : "")}");
         partAttempted = true;
@@ -651,7 +651,7 @@ public partial class QDayScript : Script
         truckBlip.IsFlashing = true;
         truckBlip.FlashInterval = 250;
         truckBlip.FlashTimeLeft = 2000;
-        LesterText("Got it. Bring it to me. Every bump makes it more error-prone.");
+        JayText("Got it. Bring it to me. Every bump makes it more error-prone.");
         Log.Write($"pickup {chip.Key}, wanted {chip.Wanted}");
     }
 
@@ -722,7 +722,7 @@ public partial class QDayScript : Script
     {
         var chip = loc.Chips[chipIndex];
         atlas.Calibrate(CalibrationJob, chip.Key);
-        LesterText("Installing the new part. Let's see where the errors are now.");
+        JayText("Installing the new part. Let's see where the errors are now.");
         Log.Write($"delivered {chip.Key}, penalty {damagePenalty:P2}, calibrating");
     }
 
@@ -741,8 +741,8 @@ public partial class QDayScript : Script
         }
     }
 
-    const int ResultBeforeLesterMs = 2500;   // the result title card shows this long before Lester's text, so the card is read first
-    const int LesterBeforeNextMs = 4000;
+    const int ResultBeforeJayMs = 2500;   // the result title card shows this long before Jay's text, so the card is read first
+    const int JayBeforeNextMs = 4000;
 
     /// <summary>
     /// Judges a delivered part on its own target. A pass on the last part reaches Threshold, a pass on another moves
@@ -759,9 +759,9 @@ public partial class QDayScript : Script
         Log.Write($"calibrated {chip.Key}: live {errorRate:P2} + damage {damagePenalty:P2} = {total:P2}, target {Percent(target)}% -> {(clean ? "under the target" : "over the target, same part again")}");
 
         Hud.BigMessage($"ERROR RATE {total * 100:0.0}%", !clean ? $"over the {Percent(target)}% target" : lastChip ? $"under {Percent(target)}%" : $"target under {Percent(target)}%");
-        Wait(ResultBeforeLesterMs);
-        LesterText(clean ? PassLine(chip.Key) : "Over the target. That's your driving. Get me another one, and don't damage it.");
-        Wait(LesterBeforeNextMs);
+        Wait(ResultBeforeJayMs);
+        JayText(clean ? PassLine(chip.Key) : "Over the target. That's your driving. Get me another one, and don't damage it.");
+        Wait(JayBeforeNextMs);
 
         if (clean && lastChip) { GoTo(Phase.Threshold); return; }
         if (clean)
@@ -811,7 +811,7 @@ public partial class QDayScript : Script
     {
         if (CheckForPlayerDeath()) return;
 
-        if (!thresholdLine && Elapsed() > 3) { thresholdLine = true; LesterText("It's running."); }
+        if (!thresholdLine && Elapsed() > 3) { thresholdLine = true; JayText("It's running."); }
         if (Elapsed() > ThresholdSeconds) StartQDay(ThresholdResult());
     }
 
@@ -1135,7 +1135,7 @@ public partial class QDayScript : Script
                     briefcaseBlips[i] = null;
                     briefcasePickups[i] = null;   // collected: the game has removed it
                     briefcaseBlips[other].ShowRoute = true;
-                    LesterText($"Empty? Then it's in the other one, at {e.BriefcaseNames[other]}.");
+                    JayText($"Empty? Then it's in the other one, at {e.BriefcaseNames[other]}.");
                     Screen.ShowSubtitle($"Get the other briefcase from ~y~{e.BriefcaseNames[other]}~s~.", 8000);
                     break;
                 }
@@ -1145,7 +1145,7 @@ public partial class QDayScript : Script
                 {
                     shownGetawayCarMessage = true;
                     if (GetawayCar.Car?.Exists() ?? false)
-                        LesterText("There's a ~b~little something~s~ parked next to you. The owner sends his regards. Well, he doesn't know yet. Try not to scratch it.");
+                        JayText("There's a ~b~little something~s~ parked next to you. The owner sends his regards. Well, he doesn't know yet. Try not to scratch it.");
                 }
 
                 if (ped.Position.DistanceTo(e.Pilot) < 20f)
@@ -1178,13 +1178,13 @@ public partial class QDayScript : Script
         GetawayCar.Clear();   // likewise not deleted, and the player may be in it
     }
 
-    /// <summary>Moves the escape on: Lester's line if any, the objective, and the blip.</summary>
+    /// <summary>Moves the escape on: Jay's line if any, the objective, and the blip.</summary>
     void EscapeTo(EscapeStep step, string line = null)
     {
         Log.Write($"escape: {escapeStep} -> {step}");
         escapeStep = step;
         var e = loc.Escape;
-        if (line != null) LesterText(line);
+        if (line != null) JayText(line);
         Screen.ShowSubtitle(step switch
         {
             EscapeStep.ToBank => "Get to the ~y~bank~s~.",
@@ -1499,7 +1499,7 @@ public class Locations
     /// <summary>The escape's stops (QDayScript.TickEscape). All placeholders, to verify in game: script.md section 9, "For Alejandro".</summary>
     public class EscapeSites
     {
-        public string BankName, WayOutName;                       // as Lester and the objectives say them
+        public string BankName, WayOutName;                       // as Jay and the objectives say them
         public string[] BriefcaseNames;                           // the two briefcases' places, as the objectives say them
         public Vector3 BankDoor, VaultDoor, Vault, Pilot, Plane;
         public float PilotHeading, PlaneHeading;
@@ -1519,7 +1519,7 @@ public class Locations
         },
         Lab = new()
         {
-            Name = "Lester's house (the machine is built here)",
+            Name = "Jay's house (the machine is built here)",
             Pos = new(1279.96f, -1733.71f, 53.55f),
         },
         Chips = [

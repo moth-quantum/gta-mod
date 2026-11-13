@@ -6,13 +6,13 @@ Every line the player sees, in the order they see it, taken from `mod/QDay.cs` o
 
 ## Mission order
 
-1. Lester: the pitch
+1. Jay: the pitch
 2. Drive to Humane Labs, shoot-out, drive back safely
-3. Lester: calibration, then the next part
+3. Jay: calibration, then the next part
 4. Drive to the FIB Building, hacking game, drive back safely
-5. Lester: calibration, then the next part
+5. Jay: calibration, then the next part
 6. Drive to Fort Zancudo, shoot-out, hacking game, drive back safely
-7. Lester: calibration passes, then the wait on IBM hardware
+7. Jay: calibration passes, then the wait on IBM hardware
 8. Q-Day: the title, then the riot starts
 9. The escape, with the riot carrying on around the player: drive to the bank, roadblock, through the crowd on foot, cash from the vault, the passport from a house, a car, then the airport or a helipad
 10. End
@@ -23,17 +23,17 @@ Every line the player sees, in the order they see it, taken from `mod/QDay.cs` o
 
 **Status:** in the game, played. The lines below are new and not in the code yet.
 
-The player walks to the yellow Q blip at Lester's house and presses E. Lester's lines arrive as texts on the phone, so there's no voice acting.
+The player walks to the yellow Q blip at Jay's house and presses E. Jay's lines arrive as texts on the phone, so there's no voice acting.
 
-> **Lester:** I've been building something in my garage...
+> **Jay:** I've been building something in my garage...
 >
-> **Lester:** A quantum computer. One that works could open every bank account in Los Santos. Every police file. Every phone.
+> **Jay:** A quantum computer. One that works could open every bank account in Los Santos. Every police file. Every phone.
 >
-> **Lester:** Mine doesn't work yet. Too many errors.
+> **Jay:** Mine doesn't work yet. Too many errors.
 >
-> **Lester:** If I get the error rate under 2%, it starts fixing its own mistakes. Then it opens everything.
+> **Jay:** If I get the error rate under 2%, it starts fixing its own mistakes. Then it opens everything.
 >
-> **Lester:** All I need is a fridge colder than outer space, a better command system and a better chip. I know where all three are. You in?
+> **Jay:** All I need is a fridge colder than outer space, a better command system and a better chip. I know where all three are. You in?
 
 Title card: **Q-DAY**, build a fault-tolerant quantum computer
 
@@ -47,7 +47,7 @@ The first heist starts straight after (see section 2).
 
 **Status:** the truck, the keypad and the 3-star wanted level are in the game and played. The cryostat line is new and not in the code yet. The guards aren't built: there's only a placeholder for them in `QDay.cs` on Alejandro's branch.
 
-> **Lester:** First, the fridge. The chip only works when it's kept just above absolute zero, and mine isn't cold enough. Every bit of heat causes errors. Humane Labs has what we need... a cryostat.
+> **Jay:** First, the fridge. The chip only works when it's kept just above absolute zero, and mine isn't cold enough. Every bit of heat causes errors. Humane Labs has what we need... a cryostat.
 
 Objective: *Steal the cryostat from Humane Labs.*
 
@@ -59,9 +59,9 @@ Then the drive back (section 5).
 
 ## 3. Heist two: FIB Building
 
-**Status:** the truck and the 4-star wanted level are in the game and played. The hacking game is built in pull request #11, not yet played. Lester's line and the objective are new and not in the code yet.
+**Status:** the truck and the 4-star wanted level are in the game and played. The hacking game is built in pull request #11, not yet played. Jay's line and the objective are new and not in the code yet.
 
-> **Lester:** Next, the command system. It tells the qubits what to do. Mine's too old. Too many errors. I've heard the FIB has a brand new, government-grade one. Get it however you can.
+> **Jay:** Next, the command system. It tells the qubits what to do. Mine's too old. Too many errors. I've heard the FIB has a brand new, government-grade one. Get it however you can.
 
 Objective: *Steal the command system from the FIB Building.*
 
@@ -81,9 +81,9 @@ Then the drive back (section 5).
 
 ## 4. Heist three: Fort Zancudo
 
-**Status:** the truck and the 5-star wanted level are in the game and played. The shoot-out isn't built. The hacking game is built in pull request #11, not yet played. Lester's line and the objective are new and not in the code yet.
+**Status:** the truck and the 5-star wanted level are in the game and played. The shoot-out isn't built. The hacking game is built in pull request #11, not yet played. Jay's line and the objective are new and not in the code yet.
 
-> **Lester:** Last one. The chip. The qubits sit on it, and mine's too flawed to hold them steady. Fort Zancudo has a military-grade one. It's called a qubit array. Do whatever it takes, and DON'T DAMAGE IT.
+> **Jay:** Last one. The chip. The qubits sit on it, and mine's too flawed to hold them steady. Fort Zancudo has a military-grade one. It's called a qubit array. Do whatever it takes, and DON'T DAMAGE IT.
 
 Objective: *Steal the qubit array from Fort Zancudo.*
 
@@ -97,9 +97,9 @@ Then the drive back (section 5).
 
 ## 5. The drive back
 
-**Status:** in the game, played. Lester's line is new and not in the code yet.
+**Status:** in the game, played. Jay's line is new and not in the code yet.
 
-> **Lester:** Got it. Bring it to me. Every bump makes it more error-prone.
+> **Jay:** Got it. Bring it to me. Every bump makes it more error-prone.
 
 If the player leaves the truck: *Get in the truck.*
 
@@ -111,9 +111,9 @@ If the player leaves the truck: *Get in the truck.*
 
 **Status:** in the game, played. The error rate is a real Atlas job on a simulated IBM chip. The targets, lines and title cards below are built in pull request #13, not yet played. The HUD shows the part number, the error rate and the current part's target.
 
-This runs after each delivery. It is the Lester beat between heists: the result for the part just delivered, then the line for the next heist.
+This runs after each delivery. It is the Jay beat between heists: the result for the part just delivered, then the line for the next heist.
 
-> **Lester:** Installing the new part. Let's see where the errors are now.
+> **Jay:** Installing the new part. Let's see where the errors are now.
 
 Each part has its own target, and the target tightens as the machine gets closer:
 
@@ -126,21 +126,21 @@ Each part has its own target, and the target tightens as the machine gets closer
 Then one of:
 
 - **Fridge, under target.** Title card: **ERROR RATE 9.1%**, target under 11%.
-  > **Lester:** Under 11%. Good enough for now.
+  > **Jay:** Under 11%. Good enough for now.
 
   Then the command system line (section 3).
 - **Command system, under target.** Title card: **ERROR RATE 5.2%**, target under 6%.
-  > **Lester:** Under 6%. Getting closer.
+  > **Jay:** Under 6%. Getting closer.
 
   Then the chip line (section 4).
 - **Chip, under target.** Title card: **ERROR RATE 1.8%**, under 2%.
-  > **Lester:** Under 2%. It's fixing its own mistakes. We have a working machine.
+  > **Jay:** Under 2%. It's fixing its own mistakes. We have a working machine.
 
   Then the threshold (section 7).
 - **Any part, over target.** Title card: **ERROR RATE 2.4%**, over the 2% target.
-  > **Lester:** Over the target. That's your driving. Get me another one, and don't damage it.
+  > **Jay:** Over the target. That's your driving. Get me another one, and don't damage it.
 
-  Then the same heist again, without Lester's opening line for it.
+  Then the same heist again, without Jay's opening line for it.
 
 *Note, not on screen:* the figures on the title cards are examples. Each is the part's error rate from Atlas plus the collision damage from that drive, so the code fills them in.
 
@@ -154,7 +154,7 @@ About ten seconds. The camera shakes and the screen flickers. The player keeps c
 
 Title card: **THRESHOLD**, switching on...
 
-> **Lester:** It's running.
+> **Jay:** It's running.
 
 Then Q-Day (section 8).
 
@@ -196,11 +196,11 @@ Money goes to zero and the cash readout disappears. Pedestrians are armed and tu
 
 ## 9. The escape
 
-**Status:** partly built, not yet played. The sealed roads and force fields are in the code (pull requests #9 and #10). The structure and Lester's lines below were decided on 10 November; the stops are still to build and the lines aren't in the code yet.
+**Status:** partly built, not yet played. The sealed roads and force fields are in the code (pull requests #9 and #10). The structure and Jay's lines below were decided on 10 November; the stops are still to build and the lines aren't in the code yet.
 
 Straight after the title, while the riot builds:
 
-> **Lester:** Every bank balance just hit zero. Cash is king. We broke the door codes on every major bank. Get to *(the bank)* NOW.
+> **Jay:** Every bank balance just hit zero. Cash is king. We broke the door codes on every major bank. Get to *(the bank)* NOW.
 
 1. **The bank.** Money in accounts is gone, but cash in a vault is still real, and the vault codes are public (the ticker's FLEECA VAULT PIN: 0000). Placeholder: a Fleeca branch. Objective: *Get to the bank.*
 2. **The roadblock.** A sealed road stops the car short of the bank. The player leaves the car and makes their way through an armed crowd on foot.
@@ -210,12 +210,12 @@ Straight after the title, while the riot builds:
 
    Objective: *Take the cash.*
 
-   > **Lester:** Got it? Good. Now get your passport. We need to get out of here. I'll text you where the flight's leaving from as soon as I know. I'll see you on the other side.
+   > **Jay:** Got it? Good. Now get your passport. We need to get out of here. I'll text you where the flight's leaving from as soon as I know. I'll see you on the other side.
 
    Objective: *Get your passport from (the house).*
 4. **The passport.** At one house.
 
-   > **Lester:** Flight's leaving from *(the airport or helipad)*. The pilot only takes cash. Go.
+   > **Jay:** Flight's leaving from *(the airport or helipad)*. The pilot only takes cash. Go.
 
    Objective: *Get to (the airport or helipad).*
 5. **A car.** Any car gets the player out. Stretch goal: a fast car with the Entanglement Shader paint from the Quantum Paint mod, waiting in the garage at the passport house.
