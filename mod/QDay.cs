@@ -1139,7 +1139,7 @@ public partial class QDayScript : Script
                         LesterText("There's a ~b~little something~s~ parked next to you. The owner sends his regards. Well, he doesn't know yet. Try not to scratch it.");
                 }
 
-                if (ped.Position.DistanceTo(e.WayOut) < 20f)
+                if (ped.Position.DistanceTo(e.Pilot) < 20f)
                 {
                     if (pilot != null && pilot.Exists() && !pilot.IsDead)
                     {
@@ -1272,18 +1272,37 @@ public partial class QDayScript : Script
     }
 
     // ---- Ending: fade out, credit the hardware, back to Idle -------------------------
-    bool endingTitleTried, endingTitleShown, endingCardShown;
+    bool endingTitleTried, endingTitleShown, endingCardShown, endingPlaced;
     const double EndingFallbackSeconds = 12;   // how long the fallback card stays before Idle, as before the title
 
     void BeginEnding()
     {
         Screen.FadeOut(3000);
         Log.Write("ending");
-        endingTitleTried = endingTitleShown = endingCardShown = false;
+        endingTitleTried = endingTitleShown = endingCardShown = endingPlaced = false;
+    }
+
+    void PlaceForEnding()
+    {
+        Function.Call(Hash.SET_WEATHER_TYPE_NOW_PERSIST, "CLEAR");   // CleanUpWorld lets it go again back in Idle
+        var ped = Game.Player.Character;
+        if (ped.IsInVehicle()) ped.Task.ClearAllImmediately();   // out of the plane or car, or the vehicle would come along
+        var site = loc.Ending;
+        ped.Position = site.Pos;
+        ped.Heading = site.Heading;
+        GameplayCamera.RelativeHeading = 0f;
+        Function.Call(Hash.ADVANCE_CLOCK_TIME_TO, 21, 0, 0);
+        Log.Write($"ending: clear weather, player at {site.Name} {site.Pos}, heading {site.Heading:F2}");
     }
 
     void TickEnding()
     {
+        // Once the screen is black, and before the title: the storm's over, and the player is at the ending spot.
+        if (!endingPlaced && Elapsed() > 3 && (Screen.IsFadedOut || Elapsed() > 4))
+        {
+            endingPlaced = true;
+            PlaceForEnding();
+        }
         // Once the screen is black: "you survived qday", landing on the next of the riot's Atlas numbers, with the credit under it.
         if (!endingTitleTried && Elapsed() > 3 && (Screen.IsFadedOut || Elapsed() > 4))
         {
@@ -1465,7 +1484,7 @@ public static class Hud
 public class Locations
 {
     public class Chip { public string Key, Label, Line, Objective; public Vector3 Pos; public int Wanted; public Vector3 HackPos; public float HackHeading; }
-    public class Site { public string Name; public Vector3 Pos; }
+    public class Site { public string Name; public Vector3 Pos; public float Heading; }
     public Site Start, Lab; public List<Chip> Chips; public Site Ending;
 
     /// <summary>The escape's stops (QDayScript.TickEscape). All placeholders, to verify in game: script.md section 9, "For Alejandro".</summary>
@@ -1514,8 +1533,9 @@ public class Locations
         Targets = new() { ["brisbane"] = 0.11, ["torino"] = 0.06, ["fez"] = 0.02 },
         Ending = new()
         {
-            Name = "Vinewood sign",
-            Pos = new(776.88f, 1175.61f, 345.96f)
+            Name = "Vinewood sign",   // where the player stands as the ending fades back in
+            Pos = new(726.32f, 1195.25f, 325.97f),
+            Heading = 160.55f
         },
         // Placeholders from memory of the map, none checked in game yet. Bank: the Legion Square Fleeca. Briefcases: Forum Drive
         // (Strawberry) and Grove Street. Way out: a hangar apron at LSIA (the airport gates and fence are unchecked; a helipad is the alternative).
