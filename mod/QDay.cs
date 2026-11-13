@@ -1197,9 +1197,10 @@ public partial class QDayScript : Script
 
         if (step == EscapeStep.WayOut)
         {
-            pilot = World.CreatePed("s_m_m_pilot_01", e.Pilot);
+            pilot = World.CreatePed("s_m_m_pilot_01", e.Pilot, e.PilotHeading);
             pilot.IsInvincible = true;
             pilot.BlockPermanentEvents = true;
+            Function.Call(Hash.TASK_START_SCENARIO_IN_PLACE, pilot, "WORLD_HUMAN_SMOKING", 0, true);
             plane = World.CreateVehicle(VehicleHash.Shamal, e.Plane, e.PlaneHeading);
             if (plane != null)
             {
@@ -1264,7 +1265,6 @@ public partial class QDayScript : Script
         EscapeStep.ToBank => loc.Escape.BankDoor,
         EscapeStep.Vault => vaultCashSpawned ? VaultTrolleyPos : loc.Escape.Vault,
         EscapeStep.Passport => loc.Escape.Briefcases[briefcaseBlips[0] != null ? 0 : 1],
-        EscapeStep.WayOut => loc.Escape.WayOut,
         _ => loc.Escape.Pilot,
     };
 
@@ -1479,8 +1479,8 @@ public class Locations
     {
         public string BankName, WayOutName;                       // as Lester and the objectives say them
         public string[] BriefcaseNames;                           // the two briefcases' places, as the objectives say them
-        public Vector3 BankDoor, VaultDoor, Vault, WayOut, Pilot, Plane;
-        public float PlaneHeading;
+        public Vector3 BankDoor, VaultDoor, Vault, Pilot, Plane;
+        public float PilotHeading, PlaneHeading;
         public Vector3[] Briefcases;                              // two, both on the map during the passport step
     }
     public EscapeSites Escape;
@@ -1534,9 +1534,9 @@ public class Locations
             Vault = new(146.9f, -1046.5f, 29.4f),
             BriefcaseNames = ["Forum Drive", "Grove Street"],
             Briefcases = [new(-59.655f, -1441.741f, 31.487f), new(53.948f, -1853.865f, 22.222f)],
-            WayOut = new(-1270.0f, -3010.0f, 13.9f),
-            Pilot = new(-1276.0f, -3014.0f, 13.9f),
-            Plane = new(-1286.0f, -3020.0f, 13.9f),   // beside the pilot; position and heading not checked in game
+            Pilot = new(-1388.35f, -3248.55f, 13.94f),
+            PilotHeading= 278.0f,
+            Plane = new(-1388.77f, -3257.72f, 13.94f),
             PlaneHeading = 330.0f,
         },
     };
