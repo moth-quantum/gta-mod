@@ -44,6 +44,7 @@ static class Program
         Runs(g);
         OfflineClient(g);
         ForceFieldChecks.Run(g, Resource("recorded.lockdown_districts.json"), Check);
+        QuantumPaintChecks.Run(Check);
         if (args.Contains("live")) LiveClient(g);
 
         Console.WriteLine(failures == 0 ? "all checks passed" : $"{failures} CHECKS FAILED");
