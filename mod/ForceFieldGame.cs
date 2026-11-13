@@ -2,7 +2,8 @@
 // in ForceField.cs. Calls natives, so script thread only.
 //
 // The wall colour comes from R_lut only, by way of EntanglementTable. Nothing here picks a colour.
-// Blips outlive the script, so Clear has to run on every way out. Particles are one-shot bursts where the player hits a wall.
+// Blips outlive the script, so Clear has to run on every way out. Particles are one-shot bursts where a vehicle or ped hits a wall.
+// Walls near the player push every vehicle and ped near them, not just the player.
 //
 // Unverified until seen in game: the particle name and whether it takes a tint, DRAW_POLY on rotated
 // quads, and whether velocity holds a ped. docs/forcefield-test.md covers each. Also unverified (11 Nov
@@ -32,6 +33,7 @@ public static class ForceFieldGame
     const int RagdollMs = 1200;
     const int RagdollGapMs = 2000;
     const int LogGapMs = 2000;                     // a held accelerator pushes every few ticks
+    const float TrackMargin = 30f;                 // metres past a wall's half width where an entity starts being tracked for it
 
     const float TestWallAhead = 25f;
     const float TestWallWidth = 12f;
@@ -41,13 +43,24 @@ public static class ForceFieldGame
     {
         public readonly Wall Wall = wall;
         public readonly WallSegment Segment = ForceField.Segment(wall);
-        public readonly WallTrack Track = new();
+        public readonly Dictionary<int, Tracked> Tracks = [];   // by entity handle, for the entities near this wall
         public readonly bool Test = test;
         public Blip Blip;
         public Color Colour = Color.White;         // the colour it was last drawn in, for the hit burst
     }
 
+    // One entity's side of one wall, and the last tick it was near enough to be checked.
+    sealed class Tracked
+    {
+        public readonly WallTrack Track = new();
+        public int Seen;
+    }
+
     static readonly List<Site> sites = [];
+    static readonly List<Site> active = [];        // walls within CheckRadius of the player this tick
+    static readonly List<int> stale = [];
+    static readonly Dictionary<int, int> nextRagdoll = [];   // by ped handle
+    static int tickId;
     static readonly ParticleEffectAsset asset = new(ParticleAsset);
     static readonly EntanglementTable table = LoadTable();
     static readonly LightField light = LoadLight();
@@ -60,7 +73,7 @@ public static class ForceFieldGame
     const int PlainTimeoutMs = 10000;
     static int plainRequestedAt = -1;
     static bool plainReady, plainGaveUp;
-    static int nextRagdoll, nextPushLog, nextParticle;
+    static int nextPushLog, nextParticle;
     static bool particleFailureLogged;
 
     /// <summary>Null with the reason logged if the embedded table is bad. The walls still push, but aren't drawn: no colour is made up.</summary>
@@ -110,12 +123,15 @@ public static class ForceFieldGame
         foreach (var site in sites) Remove(site);
         Log.Write($"forcefield: cleared {sites.Count} walls");
         sites.Clear();
+        active.Clear();
+        nextRagdoll.Clear();
     }
 
     static void Remove(Site site)
     {
         site.Blip?.Delete();
         site.Blip = null;
+        site.Tracks.Clear();
     }
 
     /// <summary>Debug only: a wall across the way the player is facing, going through ForceField.Segment like any other.</summary>
@@ -154,69 +170,131 @@ public static class ForceFieldGame
         return false;
     }
 
-    /// <summary>Call every tick in every phase: walls are only up during the escape, and test walls at any time.</summary>
+    /// <summary>
+    /// Call every tick in every phase: walls are only up during the escape, and test walls at any time.
+    /// Only walls within CheckRadius of the player are checked, and they push every vehicle and ped near
+    /// them, the player included. The world's vehicles and peds are fetched once a tick, and only if a wall is near.
+    /// </summary>
     public static void Tick()
     {
         if (sites.Count == 0) return;
 
-        var ped = Game.Player.Character;
-        if (!ped.Exists() || ped.IsDead)
+        var player = Game.Player.Character;
+        if (!player.Exists() || player.IsDead)
         {
             Clear();
             return;
         }
 
-        bool inVehicle = ped.IsInVehicle();
-        Entity mover = inVehicle ? ped.CurrentVehicle : ped;
-        var pos = mover.Position;
-        var vel = mover.Velocity;
+        tickId++;
+        Entity playerMover = player.IsInVehicle() ? player.CurrentVehicle : player;
+        var pos = playerMover.Position;
         var cam = Function.Call<Vector3>(Hash.GET_FINAL_RENDERED_CAM_COORD);
 
         // Only the nearest MaxDrawnWalls walls in range are drawn, and never more than MaxDrawCallsPerFrame calls.
         drawn.Clear();
+        active.Clear();
         foreach (var site in sites)
         {
             float d = pos.DistanceTo2D(new Vector3(site.Segment.CentreX, site.Segment.CentreY, 0f));
-            if (d <= ForceField.CheckRadius) drawn.Add((d, site));
+            UpdateBlip(site, d);
+            if (d <= ForceField.CheckRadius)
+            {
+                drawn.Add((d, site));
+                active.Add(site);
+            }
+            else site.Tracks.Clear();
         }
         drawn.Sort((a, b) => a.dist.CompareTo(b.dist));
         if (drawn.Count > ForceField.MaxDrawnWalls) drawn.RemoveRange(ForceField.MaxDrawnWalls, drawn.Count - ForceField.MaxDrawnWalls);
         callsThisFrame = 0;
 
-        foreach (var site in sites)
+        if (active.Count > 0)
         {
-            float dist = pos.DistanceTo2D(new Vector3(site.Segment.CentreX, site.Segment.CentreY, 0f));
-            UpdateBlip(site, dist);
-            if (dist > ForceField.CheckRadius)
+            int handle = playerMover.Handle;
+            foreach (var v in World.GetAllVehicles()) Check(v, v.Handle == handle);
+            foreach (var p in World.GetAllPeds()) Check(p, p.Handle == handle);
+            foreach (var site in active) Prune(site);
+            if (nextRagdoll.Count > 256) PruneRagdoll();
+        }
+
+        if (table != null)
+            foreach (var (_, site) in drawn) site.Colour = Draw(site, cam);
+    }
+
+    // One entity against the active walls. Its position is read once; whether it can be pushed, its velocity
+    // and everything else only when it's near a wall, so the hundreds of far-off entities cost one native each.
+    static void Check(Entity e, bool isPlayer)
+    {
+        var pos = e.Position;
+        Vector3 vel = default;
+        bool vetted = false;
+        bool isVehicle = e is Vehicle;
+        foreach (var site in active)
+        {
+            var s = site.Segment;
+            float dx = pos.X - s.CentreX, dy = pos.Y - s.CentreY, near = s.Width / 2 + TrackMargin;
+            if (dx * dx + dy * dy > near * near) continue;
+
+            if (!vetted)
             {
-                site.Track.Forget();
-                continue;
+                if (!Pushable(e)) return;
+                vel = e.Velocity;
+                vetted = true;
             }
 
-            var result = ForceField.Step(site.Segment, site.Track, inVehicle ? ForceField.Vehicle : ForceField.OnFoot, pos.X, pos.Y, pos.Z, vel.X, vel.Y);
+            int h = e.Handle;
+            if (!site.Tracks.TryGetValue(h, out var t)) site.Tracks[h] = t = new();
+            t.Seen = tickId;
+            var result = ForceField.Step(s, t.Track, isVehicle ? ForceField.Vehicle : ForceField.OnFoot, pos.X, pos.Y, pos.Z, vel.X, vel.Y);
             if (result.Kind != PushKind.None)
             {
-                Burst(site, pos);   // before Apply moves the player, so it's level with where they hit
-                Apply(result, ped, mover, inVehicle, ref pos, ref vel);
+                Burst(site, pos);   // before Apply moves it, so it's level with where it hit
+                Apply(result, e, isVehicle, isPlayer, ref pos, ref vel);
             }
-
-            if (table != null && drawn.Exists(e => e.site == site)) site.Colour = Draw(site, cam);
         }
     }
 
-    static void Apply(in PushResult r, Ped ped, Entity mover, bool inVehicle, ref Vector3 pos, ref Vector3 vel)
+    // Trains are on rails, and moving one by velocity would derail it. A ped in a vehicle moves with it, so
+    // the vehicle is what's pushed. The dead are left where they fall.
+    static bool Pushable(Entity e) => e switch
     {
-        float speed = vel.Length();
-        if (Game.GameTime >= nextPushLog)
+        Vehicle v => !v.Model.IsTrain,
+        Ped p => !p.IsDead && !p.IsInVehicle(),
+        _ => false,
+    };
+
+    // Forgets entities that weren't near this wall this tick, and those gone from the world.
+    static void Prune(Site site)
+    {
+        stale.Clear();
+        foreach (var kv in site.Tracks)
+            if (kv.Value.Seen != tickId) stale.Add(kv.Key);
+        foreach (int h in stale) site.Tracks.Remove(h);
+    }
+
+    static void PruneRagdoll()
+    {
+        stale.Clear();
+        int now = Game.GameTime;
+        foreach (var kv in nextRagdoll)
+            if (kv.Value <= now) stale.Add(kv.Key);
+        foreach (int h in stale) nextRagdoll.Remove(h);
+    }
+
+    static void Apply(in PushResult r, Entity mover, bool isVehicle, bool isPlayer, ref Vector3 pos, ref Vector3 vel)
+    {
+        int now = Game.GameTime;
+        if (now >= nextPushLog)
         {
-            nextPushLog = Game.GameTime + LogGapMs;
-            Log.Write($"forcefield: {(r.Kind == PushKind.PutBack ? "put back" : "pushed")} {(inVehicle ? "vehicle" : "on foot")} at {speed:0.0} m/s");
+            nextPushLog = now + LogGapMs;
+            Log.Write($"forcefield: {(r.Kind == PushKind.PutBack ? "put back" : "pushed")} {(isPlayer ? "player" : "npc")} {(isVehicle ? "vehicle" : "on foot")} at {vel.Length():0.0} m/s");
         }
 
         // A ped's animation is likely to override its velocity, so it goes limp first and takes the push that way.
-        if (!inVehicle && Game.GameTime >= nextRagdoll)
+        if (!isVehicle && mover is Ped ped && (!nextRagdoll.TryGetValue(ped.Handle, out int next) || now >= next))
         {
-            nextRagdoll = Game.GameTime + RagdollGapMs;
+            nextRagdoll[ped.Handle] = now + RagdollGapMs;
             ped.Ragdoll(RagdollMs, RagdollType.Balance);
         }
 
@@ -389,7 +467,7 @@ public static class ForceFieldGame
         }
     }
 
-    /// <summary>A one-shot burst on the wall, at the point nearest the player, tinted to the wall's colour. At most one per ParticleGapMs.</summary>
+    /// <summary>A one-shot burst on the wall, at the point nearest what hit it, tinted to the wall's colour. At most one per ParticleGapMs.</summary>
     static void Burst(Site site, Vector3 at)
     {
         if (Game.GameTime < nextParticle) return;
@@ -397,7 +475,7 @@ public static class ForceFieldGame
         if (!asset.IsLoaded) return;   // the next hit picks it up
         nextParticle = Game.GameTime + ParticleGapMs;
 
-        // The point on the wall nearest the player.
+        // The point on the wall nearest what hit it.
         var w = site.Segment;
         float dx = w.BX - w.AX, dy = w.BY - w.AY, len2 = dx * dx + dy * dy;
         float f = len2 > 0f ? Math.Max(0f, Math.Min(1f, ((at.X - w.AX) * dx + (at.Y - w.AY) * dy) / len2)) : 0.5f;

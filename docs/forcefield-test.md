@@ -24,7 +24,7 @@ Build `mod/`, copy `bin/QDay.dll` to `scripts\`, set `Debug = true` in `QDay.ini
 
 ## B. Push-back
 
-6. **Slow:** drive into the wall at walking pace. The car is turned back without getting through. The log shows `forcefield: pushed vehicle at ...`.
+6. **Slow:** drive into the wall at walking pace. The car is turned back without getting through. The log shows `forcefield: pushed player vehicle at ...`.
 7. **Fast:** do the same at about 100 km/h, then at full speed in a fast car, and try a motorbike and a truck. Nothing should get through, and the bounce should look like hitting something rather than a glitch. The log shows `put back` if a tick ever lands past the wall. The bounce strength is one constant, `Restitution`, so please say if it feels wrong.
 8. **At an angle:** a shallow approach should deflect the car along its way, rather than stopping it.
 9. **On foot:** walk, then sprint, into the wall. I expect animation to override velocity on a ped, so the player goes limp for about a second and is pushed away. Say whether that's what happens, whether it looks acceptable, and whether you can get through by walking repeatedly at it.
@@ -60,7 +60,7 @@ Build `mod/`, copy `bin/QDay.dll` to `scripts\`, set `Debug = true` in `QDay.ini
 
 25. **Escape:** press F7 then F6 to reach the escape. The log shows `forcefield: N walls up`, where N is the sealed walls in the layout, and sealed sites get walls and blips. With the placeholder data, they'll be in odd places.
 26. **Debug view:** the blue columns only appear with `Debug = true`. With `Debug = false`, there are no columns but the force field is still there, and F4 does nothing.
-27. **GPS:** the game's route to the objective doesn't know about the walls, so it can lead into one. I'd expect this, but please say how it plays, and also what AI traffic does at a wall, since the walls only affect the player. Section G tests a possible fix for the GPS, and section H a simpler fallback.
+27. **GPS:** the game's route to the objective doesn't know about the walls, so it can lead into one. I'd expect this, but please say how it plays, and also what AI traffic does at a wall: walls within 150 m of the player push every vehicle and ped near them too, so say whether traffic and pedestrians bounce off sensibly, pile up, or get stuck. The log names who was pushed (`player` or `npc`). Section G tests a possible fix for the GPS, and section H a simpler fallback.
 
 ## G. Switching off the road past a wall (experiment, Debug only)
 
