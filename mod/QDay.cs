@@ -33,7 +33,7 @@ public sealed class PhaseCallbacks(Action begin = null, Action tick = null, Acti
 
 public partial class QDayScript : Script
 {
-    const int DefaultChipIndex = ChipHumaneLabs;
+    const int DefaultChipIndex = ChipMilitary;
 
     const int ChipHumaneLabs = 0;
     const int ChipFIB = 1;
@@ -1512,7 +1512,7 @@ public class Locations
             new() { Key = "fez",      Label = "Fort Zancudo qubit array",   Pos = new(-2047.0f, 3132.0f, 32.8f),   Wanted = 5,
                     Line = "Last one. The chip. The qubits sit on it, and mine's too flawed to hold them steady. Fort Zancudo has a military-grade one. It's called a qubit array. Do whatever it takes, and DON'T DAMAGE IT.",
                     Objective = "Steal the ~y~qubit array~s~ from Fort Zancudo.",
-                    HackPos = new(-2043.0f, 3132.0f, 32.8f), HackHeading = 0f },
+                    HackPos = new(-2043.0f, 3132.0f, 33.8f), HackHeading = 0f },
         ],
         // Each part has to come in under its own target, which tightens as the machine gets closer. With the recorded
         // error rates (8.5%, 4.56%, 1.73%) and 5 points per 1000 body health lost, the drive back can lose about 500

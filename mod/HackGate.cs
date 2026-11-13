@@ -20,6 +20,7 @@ public sealed class HackGate
     const string SuccessSound = "Hack_Success", SuccessSoundSet = "DLC_HEIST_BIOLAB_PREP_HACKING_SOUNDS";   // name unconfirmed
     static readonly Color MarkerColor = Color.FromArgb(150, 255, 205, 0);
 
+    Prop table;
     Prop terminal;
     Blip blip;
     Vehicle truck;
@@ -41,11 +42,13 @@ public sealed class HackGate
         spawned = true;
         truck.LockStatus = VehicleLockStatus.CannotEnter;
 
-        float z = World.GetGroundHeight(chip.HackPos + new Vector3(0f, 0f, 2f));
-        ground = z > 0f ? new Vector3(chip.HackPos.X, chip.HackPos.Y, z) : chip.HackPos;
+        ground = chip.HackPos;
 
-        terminal = World.CreateProp(new(TerminalModel), ground, new Vector3(0f, 0f, chip.HackHeading), false, false);
+        table = World.CreateProp("prop_mb_crate_01b", ground, false, true);
+        table?.IsPositionFrozen = true;
+        terminal = World.CreatePropNoOffset(TerminalModel, table.AbovePosition, new Vector3(0f, 0f, chip.HackHeading), false);
         if (terminal == null) Log.Write($"hack terminal: could not create {TerminalModel}, marker and blip only");
+        terminal?.IsPositionFrozen = true;
 
         blip = World.CreateBlip(ground);
         blip.Sprite = BlipSprite.Standard;
@@ -106,6 +109,8 @@ public sealed class HackGate
         blip = null;
         terminal?.MarkAsNoLongerNeeded();
         terminal = null;
+        table?.MarkAsNoLongerNeeded();
+        table = null;
         if (truck != null && truck.Exists() && !Solved) truck.LockStatus = VehicleLockStatus.Unlocked;
         truck = null;
     }
