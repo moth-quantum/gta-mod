@@ -1557,7 +1557,7 @@ public class Locations
             Vault = new(146.9f, -1046.5f, 29.4f),
             BriefcaseNames = ["Forum Drive", "Grove Street"],
             Briefcases = [new(-59.655f, -1441.741f, 31.487f), new(53.948f, -1853.865f, 22.222f)],
-            Pilot = new(-1388.35f, -3248.55f, 13.94f),
+            Pilot = new(-1388.35f, -3248.55f, 13.0f),
             PilotHeading= 278.0f,
             Plane = new(-1388.77f, -3257.72f, 13.94f),
             PlaneHeading = 330.0f,
