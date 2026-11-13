@@ -939,7 +939,6 @@ public partial class QDayScript : Script
     // Starts straight after the Q-Day title; the riot, the ticker and the lockdown's force fields carry on.
     // Any car will do for the way out (script step 5), so it has no step of its own; the stretch-goal car (GetawayCar, the
     // Quantum Paint mod's paint) is parked on the road by the briefcase that held the passport, for the player to take or not.
-    // TODO: the roadblock, guards/crowd at the bank.
     // The passport is in one of two briefcases, both on the map at once, so the player picks which to go to first. A quantum
     // coin toss (rng, the Q-Day job's numbers) decides whether the first one opened holds it; if not, its blip goes and the
     // other one's is left, one more stop before the plane.
@@ -1178,7 +1177,7 @@ public partial class QDayScript : Script
         {
             EscapeStep.ToBank => "Get to the ~y~bank~s~.",
             EscapeStep.Vault => "Open the ~y~vault door~s~.",
-            EscapeStep.Passport => $"Your passport's in one of two ~y~briefcases~s~, at {e.BriefcaseNames[0]} or {e.BriefcaseNames[1]}.",
+            EscapeStep.Passport => $"Your passport's in one of two ~g~briefcases~s~, at {e.BriefcaseNames[0]} or {e.BriefcaseNames[1]}.",
             EscapeStep.WayOut => $"Meet the ~b~pilot~s~ at the airport.",
             _ => "",
         }, 8000);
@@ -1521,7 +1520,7 @@ public class Locations
             VaultDoor = new(148.03f, -1044.36f, 29.51f),   // GET_CLOSEST_OBJECT_OF_TYPE looks within 1 m of this
             Vault = new(146.9f, -1046.5f, 29.4f),
             BriefcaseNames = ["Forum Drive", "Grove Street"],
-            Briefcases = [new(-14.4f, -1442.0f, 30.5f), new(105.0f, -1940.0f, 20.25f)],
+            Briefcases = [new(-59.655f, -1441.741f, 31.487f), new(53.948f, -1853.865f, 22.222f)],
             WayOut = new(-1270.0f, -3010.0f, 13.9f),
             Pilot = new(-1276.0f, -3014.0f, 13.9f),
             Plane = new(-1286.0f, -3020.0f, 13.9f),   // beside the pilot; position and heading not checked in game
