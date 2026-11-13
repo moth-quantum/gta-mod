@@ -33,7 +33,7 @@ public sealed class PhaseCallbacks(Action begin = null, Action tick = null, Acti
 
 public partial class QDayScript : Script
 {
-    const int DefaultChipIndex = ChipMilitary;
+    const int DefaultChipIndex = ChipHumaneLabs;
 
     const int ChipHumaneLabs = 0;
     const int ChipFIB = 1;
@@ -695,7 +695,7 @@ public partial class QDayScript : Script
             Screen.ShowSubtitle($"Get in the ~b~truck~s~.", 100);
         }
 
-        if (inTruck && ped.Position.DistanceTo(loc.Lab.Pos) < 12f)
+        if (inTruck && ped.Position.DistanceTo(loc.Lab.Pos) < 12f && truck.Speed < 0.5f)
         {
             ped.Task.LeaveVehicle();
             truck.LockStatus = VehicleLockStatus.CannotEnter;
