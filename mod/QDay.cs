@@ -468,8 +468,7 @@ public partial class QDayScript : Script
                     chipProp = World.CreateProp(new("prop_military_pickup_01"), Vector3.Zero, false, false);
                     chipProp.AttachTo(truck, new(0f, -1f, 0.9f), new(0f, 0f, 90f));
 
-                    keypad = World.CreateProp(new("prop_ld_keypad_01"), new(3624.6f, 3749.3f, 28.95f), new(0f, 0f, 145.5f), false, false);
-                    SpawnGuards("s_m_m_chemsec_01", WeaponHash.Pistol);
+                    keypad = World.CreateProp(new("prop_ld_keypad_01"), KeypadPos, new(0f, 0f, 145.5f), false, false);
                     break;
                 case ChipFIB: // FIB
                     truck = World.CreateVehicle(VehicleHash.Boxville2, new(178.55f, -698.54f, 32.94f), 68.86f);
@@ -519,7 +518,14 @@ public partial class QDayScript : Script
                     if (unlocked && !heistCanReachTruck)
                     {
                         heistCanReachTruck = true;
+                        SpawnGuards("s_m_m_chemsec_01", WeaponHash.Pistol);
                         World.CreateParticleEffectNonLooped(new("core"), "ent_sht_electrical_box", keypad);
+                    }
+
+                    // Held on screen while the player is by the keypad and the shutters are shut.
+                    if (!unlocked && ped.Position.DistanceTo(KeypadPos) < KeypadHintRadius)
+                    {
+                        Screen.ShowSubtitle("Destroy the ~r~keypad~s~ to open the doors.", 100);
                     }
 
                     Function.Call(Hash.SET_STATE_OF_CLOSEST_DOOR_OF_TYPE, Game.GenerateHash("v_ilev_bl_shutter2"), 3627.71f, 3746.72f, 27.7f, /* locked */ !unlocked, /* open ratio */ unlocked ? 1.0 : 0.0, false);
@@ -548,6 +554,9 @@ public partial class QDayScript : Script
             }
         }
     }
+
+    static readonly Vector3 KeypadPos = new(3624.6f, 3749.3f, 28.95f);   // Humane Labs, by the shutters
+    const float KeypadHintRadius = 15f;   // metres from the keypad where the hint shows
 
     const int GuardCount = 4;
     const float GuardRadius = 6f;
