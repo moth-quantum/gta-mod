@@ -30,6 +30,35 @@ static class QuantumPaintChecks
 
         check(QuantumPaint.Ease(0, 100, 0) == 0, "no time, no change");
         check(Math.Abs(QuantumPaint.Ease(0, 100, 0.1f) - 60) < 1e-3, "a tenth of a second covers 60% of the way");
+        check(QuantumPaint.Hue((107, 82, 149), 1) == (107, 82, 149), "hue factor 1 leaves the colour alone");
+        var grey = QuantumPaint.Hue((107, 82, 149), 0);
+        check(grey.r == grey.g && grey.g == grey.b && grey.r == 97, "hue factor 0 is the colour's grey");
+        check(QuantumPaint.Hue((200, 0, 0), 0.5f) == (130, 30, 30), "hue factor 0.5 is halfway to grey");
+        check(QuantumPaint.Hue((200, 0, 0), 2) == (200, 0, 0) && QuantumPaint.Hue((200, 0, 0), -1) == QuantumPaint.Hue((200, 0, 0), 0), "the hue factor is clamped to 0..1");
+        check(QuantumPaint.Pearl(0, 0) == 111, "with no hue the pearl is pearl white");
+        check(QuantumPaint.StepHue(0, 1, 0) == 0 && QuantumPaint.StepHue(0, 1, -1) == 0, "no time, no hue change");
+        check(Math.Abs(QuantumPaint.StepHue(0, 1, QuantumPaint.HueFadeSeconds / 2) - 0.5f) < 1e-4, "half the fade time is half the hue");
+        check(QuantumPaint.StepHue(0, 1, 10) == 1 && QuantumPaint.StepHue(1, 0, 10) == 0, "the hue stops at its target");
+        check(QuantumPaint.Flicker(0, 0.1f) == 0 && QuantumPaint.Flicker(1, 0.1f) == 1, "the flicker leaves engine off and fully on alone");
+        bool above = false, below = false, bounded = true, smooth = true;
+        float dt = 0.005f;
+        for (int i = 0; i < 2000; i++)
+        {
+            float t = i * dt, v = QuantumPaint.Flicker(0.5f, t);
+            above |= v > 0.55f; below |= v < 0.45f;
+            bounded &= Math.Abs(v - 0.5f) <= QuantumPaint.FlickerDepth + 1e-4f;
+            smooth &= Math.Abs(QuantumPaint.Flicker(0.5f, t + dt) - v) < 0.05f;
+        }
+        check(above && below, "halfway through the fade the flicker goes both above and below it");
+        check(bounded, "the flicker stays within FlickerDepth of the fade");
+        check(smooth, "the flicker glides: 5 ms never moves it more than 0.05");
+        float worstEarly = 0, worstMid = 0;
+        for (int i = 0; i < 500; i++)
+        {
+            worstEarly = Math.Max(worstEarly, Math.Abs(QuantumPaint.Flicker(0.05f, i * 0.01f) - 0.05f));
+            worstMid = Math.Max(worstMid, Math.Abs(QuantumPaint.Flicker(0.5f, i * 0.01f) - 0.5f));
+        }
+        check(worstEarly < worstMid * 0.5f, $"the flicker is gentler near the ends of the fade ({worstEarly:F3} at 0.05, {worstMid:F3} at 0.5)");
         check(QuantumPaint.Ease(0, 100, 1) == 100 && QuantumPaint.Ease(0, 100, -1) == 0, "a long frame snaps, a negative one doesn't move");
     }
 }

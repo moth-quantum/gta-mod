@@ -18,6 +18,9 @@ public static class QuantumPaint
     public const int SecondaryShift = 15;   // degrees: the secondary coat is the colour 15 degrees further on
     public const int PearlShift = 30;       // and the pearlescent layer 30 degrees further on
     public const float Smoothing = 6f;      // per second: how fast the base coat follows the angle, so sweeps glide
+    public const float HueFadeSeconds = 1.5f;   // how long the hue takes to fade in when the engine starts, or out when it stops
+    public const float FlickerStepSeconds = 0.2f;   // the engine-start flicker glides to a new level this often
+    public const float FlickerDepth = 0.25f;         // at most this far above or below the fade, halfway through it
 
     // PEAKED, angle 0..90 degrees, r g b per degree: 91 x 3 bytes. Copied unchanged from EntangledPaint.cs.
     public static readonly byte[] Peaked = {
@@ -46,9 +49,9 @@ public static class QuantumPaint
     public static (int r, int g, int b) Secondary(int degrees) => Colour(Math.Min(degrees + SecondaryShift, MaxAngle));
 
     /// <summary>The pearlescent layer, as one of GTA's paint palette indices (SET_VEHICLE_EXTRA_COLOURS takes no RGB).</summary>
-    public static int Pearl(int degrees)
+    public static int Pearl(int degrees, float hueFactor = 1f)
     {
-        var (r, g, b) = Colour(Math.Min(degrees + PearlShift, MaxAngle));
+        var (r, g, b) = Hue(Colour(Math.Min(degrees + PearlShift, MaxAngle)), hueFactor);
         return HueIndex(r, g, b);
     }
 
@@ -65,4 +68,50 @@ public static class QuantumPaint
     /// <summary>One frame of the base coat easing towards its target, so a sweep glides instead of stepping.</summary>
     public static float Ease(float current, float target, float seconds) =>
         current + (target - current) * Math.Min(1f, Smoothing * Math.Max(0f, seconds));
+
+    /// <summary>
+    /// A colour with its hue scaled by <paramref name="factor"/>: 1 is the colour unchanged, 0 is its grey (Rec. 601 luma),
+    /// in between a straight blend. The factor is clamped to 0..1.
+    /// </summary>
+    public static (int r, int g, int b) Hue((int r, int g, int b) c, float factor)
+    {
+        float f = Math.Max(0f, Math.Min(1f, factor));
+        float grey = 0.299f * c.r + 0.587f * c.g + 0.114f * c.b;
+        int Mix(int v) => (int)Math.Round(grey + (v - grey) * f);
+        return (Mix(c.r), Mix(c.g), Mix(c.b));
+    }
+
+    /// <summary>One frame of the hue factor moving linearly towards <paramref name="target"/> (1 engine on, 0 off), over HueFadeSeconds end to end.</summary>
+    public static float StepHue(float current, float target, float seconds)
+    {
+        float step = Math.Max(0f, seconds) / HueFadeSeconds;
+        return current < target ? Math.Min(target, current + step) : Math.Max(target, current - step);
+    }
+
+    /// <summary>
+    /// The hue to show while it fades in after the engine starts: the fade, wobbling smoothly up and down around it.
+    /// Every FlickerStepSeconds the wobble picks a new level in -1..1 and eases to it (smoothstep), scaled by FlickerDepth
+    /// and by sin(pi * hueFactor), so it's gentle at the start, strongest halfway and gone by the end. 0 and 1 are returned
+    /// unchanged, so the flicker ends exactly when the fade does. Deterministic and continuous in
+    /// <paramref name="secondsSinceStart"/>.
+    /// </summary>
+    public static float Flicker(float hueFactor, float secondsSinceStart)
+    {
+        if (hueFactor <= 0f || hueFactor >= 1f) return hueFactor;
+        float x = Math.Max(0f, secondsSinceStart) / FlickerStepSeconds;
+        int step = (int)Math.Floor(x);
+        float u = x - step;
+        u = u * u * (3f - 2f * u);
+        float wobble = Level(step) + (Level(step + 1) - Level(step)) * u;
+        float envelope = (float)Math.Sin(Math.PI * hueFactor);
+        return Math.Max(0f, Math.Min(1f, hueFactor + FlickerDepth * envelope * wobble));
+    }
+
+    // A repeatable level in -1..1 for each flicker step.
+    static float Level(int step)
+    {
+        uint h = (uint)step * 0x9E3779B1u;
+        h ^= h >> 15; h *= 0x85EBCA77u; h ^= h >> 13;
+        return (h & 0xFFFF) / 32767.5f - 1f;
+    }
 }

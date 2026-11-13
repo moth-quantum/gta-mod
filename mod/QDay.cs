@@ -951,6 +951,9 @@ public partial class QDayScript : Script
     const string BriefcaseModel = "m24_2_prop_m42_metalbriefcase_01a";
     Ped pilot;
     Vehicle plane;   // WayOut: the pilot's Shamal, parked beside him and locked
+    bool shownGetawayCarMessage = false;
+    DateTime getawayCarMessageStarted;
+
 
     // The Fleeca vault door, swung open by turning it -80 degrees on Z over VaultDoorSeconds, with the heist's unlock sound.
     const string VaultDoorModel = "v_ilev_gb_vauldr";
@@ -1122,7 +1125,6 @@ public partial class QDayScript : Script
                     Log.Write($"escape: briefcase {i}, {e.BriefcaseNames[i]} ({(rng is AtlasRandom ? "Atlas" : "System.Random")}): passport {(here ? "in" : "not in")} it");
                     if (here)
                     {
-                        GetawayCar.Spawn(e.Briefcases[i]);
                         EscapeTo(EscapeStep.WayOut, $"Flight's leaving from {e.WayOutName}. The pilot only takes cash. Go.");
                         break;
                     }
@@ -1136,6 +1138,13 @@ public partial class QDayScript : Script
                 }
                 break;
             case EscapeStep.WayOut:
+                if (!shownGetawayCarMessage && (DateTime.UtcNow - getawayCarMessageStarted).TotalSeconds > 3f)
+                {
+                    shownGetawayCarMessage = true;
+                    if (GetawayCar.Car?.Exists() ?? false)
+                        LesterText("There's a ~b~little something~s~ parked next to you. The owner sends his regards. Well, he doesn't know yet. Try not to scratch it.");
+                }
+
                 if (ped.Position.DistanceTo(e.WayOut) < 20f)
                 {
                     if (pilot != null && pilot.Exists() && !pilot.IsDead)
@@ -1202,6 +1211,10 @@ public partial class QDayScript : Script
             objectiveBlip.Sprite = BlipSprite.VIP;
             objectiveBlip.Color = BlipColor.Blue;
             objectiveBlip.ShowRoute = true;
+
+            getawayCarMessageStarted = DateTime.UtcNow;
+            shownGetawayCarMessage = false;
+            GetawayCar.Spawn(Game.Player.Character.Position);
         }
         else if (step == EscapeStep.Passport)
         {

@@ -48,7 +48,7 @@ public static unsafe class TextureSwap
         return found ? InstallTextureHook() : false;
     }
 
-    // Embedded DDS files from recorded/qday_textures_mild.
+    // Embedded DDS files from recorded/qday_textures_mild and recorded/getaway_livery.
     // Keyed by texture name without extension, case-insensitive: "ah_bboards1" -> "textures.ah_bboards1.dds".
     private const string TexturePrefix = "textures.";
     private static Dictionary<string, string> embeddedTextures;
@@ -251,8 +251,15 @@ public static unsafe class TextureSwap
 
     // ---- replacement textures --------------------------------------------------
     // A texture passed to FragmentSetTexture is swapped for the embedded DDS with the same name
-    // ("ah_bboards1" -> textures.ah_bboards1.dds), when there is one. Each replacement is created once, on
-    // the first call that needs it, and shared by every texture of that name.
+    // ("ah_bboards1" -> textures.ah_bboards1.dds), when there is one, or for the embedded DDS that Renamed
+    // gives for its name. Each replacement is created once, on the first call that needs it, and shared by
+    // every texture name that maps to it.
+
+    // Game texture name -> embedded texture name, for replacements whose file isn't named after the texture.
+    private static readonly (string Target, string Embedded)[] Renamed =
+    {
+        (GetawayCar.LiveryTexture, GetawayCar.LiveryReplacement),
+    };
 
     private sealed class Replacement
     {
@@ -261,25 +268,46 @@ public static unsafe class TextureSwap
         public bool Tried;              // creation attempted: a failure is never retried
     }
 
+    // Read by the detour on the render thread: only rebuilt by InstallTextureHook, before the hook is live.
     private static readonly Dictionary<uint, Replacement> replacements = new();
 
     private static void BuildReplacements()
     {
         replacements.Clear();
+        var byKey = new Dictionary<string, Replacement>(StringComparer.OrdinalIgnoreCase);
         foreach (string key in EmbeddedTextures.Keys)
         {
-            byte[] name = System.Text.Encoding.ASCII.GetBytes(key.ToLowerInvariant());
-            uint hash;
-            fixed (byte* p = name)
-                hash = HashName(p, name.Length);
+            var r = new Replacement { Key = key };
+            byKey[key] = r;
+            AddReplacement(key, r);
+        }
 
-            if (replacements.TryGetValue(hash, out Replacement other))
+        foreach (var (target, embedded) in Renamed)
+        {
+            if (!byKey.TryGetValue(StripDds(embedded), out Replacement r))
             {
-                Log.Write($"TextureSwap: '{key}' and '{other.Key}' have the same hash 0x{hash:X8}, '{key}' is not used");
+                Log.Write($"TextureSwap: no embedded texture '{embedded}' for '{target}', not swapping it");
                 continue;
             }
-            replacements[hash] = new Replacement { Key = key };
+            if (AddReplacement(target, r))
+                Log.Write($"TextureSwap: '{target}' is swapped for '{r.Key}'");
         }
+    }
+
+    private static bool AddReplacement(string target, Replacement r)
+    {
+        byte[] name = System.Text.Encoding.ASCII.GetBytes(target.ToLowerInvariant());
+        uint hash;
+        fixed (byte* p = name)
+            hash = HashName(p, name.Length);
+
+        if (replacements.TryGetValue(hash, out Replacement other))
+        {
+            Log.Write($"TextureSwap: '{target}' has the same hash 0x{hash:X8} as a texture swapped for '{other.Key}', '{target}' is not used");
+            return false;
+        }
+        replacements[hash] = r;
+        return true;
     }
 
     private static uint HashName(byte* name, int maxLength = int.MaxValue)

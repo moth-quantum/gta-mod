@@ -1,9 +1,10 @@
 // The escape's getaway car (script.md section 9, step 5, the stretch goal): a Jester (racecar) with the Quantum Paint
 // mod's paint, parked on the road nearest the briefcase that held the passport. The paint maths is QuantumPaint; this
-// file is the natives. The car's livery texture is left to TextureSwap (media/qblur_livery.png in gta-quantum-paint);
-// this only selects livery 0 so a swapped texture would show.
+// file is the natives. The car wears livery 11, whose texture LiveryTexture TextureSwap replaces with the embedded
+// LiveryReplacement (recorded/getaway_livery/qblur_livery.dds, from media/qblur_livery.png in gta-quantum-paint).
 
 using System;
+using System.Drawing;
 using GTA;
 using GTA.Math;
 using GTA.Native;
@@ -12,16 +13,24 @@ namespace QDay;
 
 public static class GetawayCar
 {
-    public const VehicleHash Model = VehicleHash.Jester2;
+    public const VehicleHash Model = VehicleHash.Zentorno;
+    public const int Livery = 11;
+    public const string LiveryTexture = "zentorno_livery_12";   // the texture of Livery, swapped by TextureSwap
+    public const string LiveryReplacement = "qblur_livery";      // embedded as textures.qblur_livery.dds
     const float SearchRadius = 60f;   // metres from the briefcase to look for a road; further, and it's parked beside the player
-
-    const ulong SetNeonEnabled = 0x2AA720E4287BF269;   // SET_VEHICLE_NEON_ENABLED
-    const ulong SetNeonColour = 0x8E0A582209A62695;    // SET_VEHICLE_NEON_COLOUR
 
     static Vehicle car;
     static Blip blip;
-    static int stockWheelColour;
     static float curR = -1f, curG, curB;   // the eased base coat, -1 = snap on the first frame
+    static float hueFactor;                // 1 with the engine running, 0 off (the paint's grey), fading between
+    static bool engineOn;
+    static float sinceEngineStart;         // seconds, drives the flicker while the hue fades in
+
+    /// <summary>
+    /// How much of the paint's hue shows: 1 with the engine running, 0 with it off, fading over QuantumPaint.HueFadeSeconds.
+    /// While it rises the paint flickers around it (QuantumPaint.Flicker); this is the fade without the flicker.
+    /// </summary>
+    public static float HueFactor => hueFactor;
 
     public static Vehicle Car => car != null && car.Exists() ? car : null;
 
@@ -36,23 +45,25 @@ public static class GetawayCar
             Log.Write($"getaway car: couldn't create {Model} at {pos}");
             return false;
         }
-        car.IsPersistent = true;
         Function.Call(Hash.SET_VEHICLE_ON_GROUND_PROPERLY, car, 5f);
-        Function.Call(Hash.SET_VEHICLE_MOD_KIT, car, 0);
-        Function.Call(Hash.SET_VEHICLE_LIVERY, car, 0);
-        Function.Call(Hash.SET_VEHICLE_DOORS_LOCKED, car, 1);   // unlocked
-        car.IsEngineRunning = true;
-        for (int i = 0; i < 4; i++) Function.Call((Hash)SetNeonEnabled, car, i, true);
-        OutputArgument pearl = new(), wheel = new();
-        Function.Call(Hash.GET_VEHICLE_EXTRA_COLOURS, car, pearl, wheel);
-        stockWheelColour = wheel.GetResult<int>();
+        car.Mods.InstallModKit();
+        car.Mods.Livery = Livery;
+        car.Mods[VehicleModType.Engine].Index = car.Mods[VehicleModType.Engine].Count - 1;
+        car.Mods[VehicleModType.Brakes].Index = car.Mods[VehicleModType.Brakes].Count - 1;
+        car.Mods[VehicleModType.Transmission].Index = car.Mods[VehicleModType.Transmission].Count - 1;
+        car.Mods[VehicleModType.Armor].Index = car.Mods[VehicleModType.Armor].Count - 1;
+        car.Mods[VehicleModType.Suspension].Index = car.Mods[VehicleModType.Suspension].Count - 1;
+        car.Mods[VehicleToggleModType.Turbo].IsInstalled = true;
+        for (int i = 0; i < 4; i++) car.Mods.SetNeonLightsOn((VehicleNeonLight)i, true);
         curR = -1f;
+        engineOn = car.IsEngineRunning;
+        hueFactor = engineOn ? 1f : 0f;
         Paint(0f);
 
         blip = car.AddBlip();
         blip.Sprite = BlipSprite.SportsCar;
         blip.Color = BlipColor.Blue;
-        blip.Name = "Getaway car";
+        blip.Name = "Getaway Car";
         Log.Write($"getaway car: {Model} at {pos}, heading {heading:F0}");
         return true;
     }
@@ -95,12 +106,20 @@ public static class GetawayCar
         curR = QuantumPaint.Ease(curR, r, seconds);
         curG = QuantumPaint.Ease(curG, g, seconds);
         curB = QuantumPaint.Ease(curB, b, seconds);
-        var (r2, g2, b2) = QuantumPaint.Secondary(deg);
+        bool on = car.IsEngineRunning;
+        if (on && !engineOn) sinceEngineStart = 0f;
+        engineOn = on;
+        sinceEngineStart += Math.Max(0f, seconds);
+        hueFactor = QuantumPaint.StepHue(hueFactor, on ? 1f : 0f, seconds);
+        float hue = on ? QuantumPaint.Flicker(hueFactor, sinceEngineStart) : hueFactor;   // flickers in, fades out smoothly
 
-        Function.Call(Hash.SET_VEHICLE_CUSTOM_PRIMARY_COLOUR, car, (int)curR, (int)curG, (int)curB);
-        Function.Call(Hash.SET_VEHICLE_CUSTOM_SECONDARY_COLOUR, car, r2, g2, b2);
-        Function.Call(Hash.SET_VEHICLE_EXTRA_COLOURS, car, QuantumPaint.Pearl(deg), stockWheelColour);
-        Function.Call((Hash)SetNeonColour, car, (int)curR, (int)curG, (int)curB);
+        var (r1, g1, b1) = QuantumPaint.Hue(((int)curR, (int)curG, (int)curB), hue);
+        var (r2, g2, b2) = QuantumPaint.Hue(QuantumPaint.Secondary(deg), hue);
+
+        car.Mods.CustomPrimaryColor = Color.FromArgb(r1, g1, b1);
+        car.Mods.CustomSecondaryColor = Color.FromArgb(r2, g2, b2);
+        car.Mods.PearlescentColor = (VehicleColor)QuantumPaint.Pearl(deg, hue);
+        car.Mods.NeonLightsColor = Color.FromArgb(r1, g1, b1);
     }
 
     /// <summary>The nearest road node to <paramref name="near"/> and its heading, or beside the player if none is close.</summary>

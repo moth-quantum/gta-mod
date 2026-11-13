@@ -44,7 +44,7 @@
     <!-- The force field's QPAM light frames, baked by tools/bake_qpam_light.py; ForceFieldGame writes them next to the script and loads them as a runtime texture. -->
     <EmbeddedResource Include="..\recorded\forcefield_light\light_*.png" LogicalName="forcefield.%(Filename)%(Extension)" />
     <!-- Replacement textures for TextureSwap, read with TextureSwap.GetEmbeddedTexture. -->
-    <EmbeddedResource Include="..\recorded\qday_textures_mild\*.dds" LogicalName="textures.%(Filename)%(Extension)" />
+    <EmbeddedResource Include="..\recorded\qday_textures_mild\*.dds;..\recorded\getaway_livery\qblur_livery.dds" LogicalName="textures.%(Filename)%(Extension)" />
   </ItemGroup>
 
   <!-- Copy the merged DLL into the game after every build when GameDir is set, usually in the

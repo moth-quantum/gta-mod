@@ -11,7 +11,7 @@ Read README.md first, then log/MORNING.md for what broke and why. PLAN.md sectio
 - `tools/remote-box/`   Mac-side helpers for driving a cloud PC by keystrokes
 - `mod/Lockdown.cs`, `mod/LockdownRun.cs` escape lockdown logic and one run's state, free of game types; `mod/LockdownGame.cs` draws it; `mod/lockdown_districts.json` is the district file the game embeds, generated from the game's roads (format in `docs/lockdown-districts.md`)
 - `mod/ForceField.cs` force field logic and colour lookup, free of game types; `mod/ForceFieldGame.cs` draws and pushes; `docs/forcefield-test.md` is the in-game test. The colour comes from `R_lut` only (`T_lut` is baked but unused)
-- `recorded/getaway_livery/qblur_livery.png` the getaway car's quantum blur livery from the Quantum Paint mod, for TextureSwap; not embedded yet
+- `recorded/getaway_livery/qblur_livery.png` the getaway car's quantum blur livery from the Quantum Paint mod; `qblur_livery.dds` beside it is embedded, and TextureSwap draws it in place of `zentorno_livery_12` (`GetawayCar.LiveryTexture`, via `TextureSwap.Renamed`)
 - `mod/QuantumPaint.cs` the getaway car's paint (the Quantum Paint mod's PEAKED table, by viewing angle), free of game types; `mod/GetawayCar.cs` spawns and paints the car; `docs/getaway-car-test.md` is the in-game test
 - `mod/RoadTest.cs` logic and `mod/RoadTestGame.cs` natives for the Debug-only road switching experiment on F4 walls (`docs/forcefield-test.md` section G). The mission doesn't use it
 - `tools/bake_entanglement.py` bakes `recorded/entanglement_lut.bin` from `entanglement-shader-v1`, keeping the raw ZIP beside it. Offline only: the game never calls that engine
