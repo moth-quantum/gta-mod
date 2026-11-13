@@ -109,10 +109,10 @@ public partial class QDayScript : Script
         debug = Settings.GetValue("General", "Debug", false);
         Log.Write($"Q-DAY loaded. debug={debug}");
 
-        string startupMsg = "~b~Q-DAY~s~ loaded.~n~  go to the ~y~Q~s~ blip to start~n~  F10 abort";
+        string startupMsg = "~b~Q-DAY~s~ loaded.~n~  go to the ~y~Q~s~ blip to start";
         if (debug)
         {
-            startupMsg += "~n~~y~DEBUG:~s~~n~  F3 road test~n~  F4 test wall~n~  F5 teleport~n~  F6 skip wait~n~  F7 Q-Day now~n~  F8 Legion Square~n~  F9 start now~n~  T textures on/off";
+            startupMsg += "~n~~y~DEBUG:~s~~n~  F3 road test~n~  F4 test wall~n~  F5 teleport~n~  F6 skip wait~n~  F7 Q-Day now~n~  F8 Legion Square~n~  F9 start now~n~  F10 abort~n~  T textures on/off";
         }
         Notification.Show(startupMsg);
     }
@@ -201,8 +201,8 @@ public partial class QDayScript : Script
     // ---- input ---------------------------------------------------------------
     void OnKeyDown(object sender, KeyEventArgs e)
     {
-        if (e.KeyCode == Keys.F10) { Log.Write("abort"); GoTo(Phase.Idle); }
         if (!debug) return;
+        if (e.KeyCode == Keys.F10) { Log.Write("abort"); GoTo(Phase.Idle); }
         // Playtest shortcuts, only with Debug = true in QDay.ini. F4 drops a force field test wall ahead, F5 teleports to the current
         // objective, F6 fakes the pending Atlas result (Threshold: a library pick), F7 jumps straight
         // to Q-Day, F8 drops you in Legion Square, F9 starts the mission from anywhere. All logged so a
@@ -242,12 +242,6 @@ public partial class QDayScript : Script
             Log.Write("DEBUG F7 jump to Q-Day");
             if (phase == Phase.Idle) StopStoryMissions();
             StartQDay(QDayLibrary.Pick());
-        }
-        if (e.KeyCode == Keys.Y)
-        {
-            vaultTrolley?.Delete();
-            vaultTrolley = null;
-            vaultTrolley = World.CreateProp(VaultTrolleyModel, VaultTrolleyPos, new(0.0f, 0.0f, 45.0f), false, false);
         }
     }
 
