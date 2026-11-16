@@ -4,6 +4,7 @@
 // LiveryReplacement (recorded/getaway_livery/qblur_livery.dds, from media/qblur_livery.png in gta-quantum-paint).
 
 using System;
+using System.IO;
 using System.Drawing;
 using GTA;
 using GTA.Math;
@@ -47,7 +48,10 @@ public static class GetawayCar
         }
         Function.Call(Hash.SET_VEHICLE_ON_GROUND_PROPERLY, car, 5f);
         car.Mods.InstallModKit();
-        car.Mods.Livery = Livery;
+
+        var isEnhanced = File.Exists("GTA5_Enhanced.exe");
+        if (!isEnhanced) // Enhanced doesn't support texture swapping, so don't change the livery
+          car.Mods.Livery = Livery;
         car.Mods[VehicleModType.Engine].Index = car.Mods[VehicleModType.Engine].Count - 1;
         car.Mods[VehicleModType.Brakes].Index = car.Mods[VehicleModType.Brakes].Count - 1;
         car.Mods[VehicleModType.Transmission].Index = car.Mods[VehicleModType.Transmission].Count - 1;
