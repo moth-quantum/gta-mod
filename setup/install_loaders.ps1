@@ -41,8 +41,9 @@ L "ScriptHookVDotNet copied"
 # The mod
 New-Item -ItemType Directory -Force "$game\scripts" | Out-Null
 Copy-Item "$src\mod\bin\QDay.dll" "$game\scripts\QDay.dll" -Force
-Copy-Item "$src\mod\locations.json" "$game\scripts\QDay.locations.json" -Force
+# Only seed the ini: an existing one holds the tester's Debug setting.
+if (-not (Test-Path "$game\scripts\QDay.ini")) { Copy-Item "$src\mod\QDay.ini" "$game\scripts\QDay.ini" }
 L "Q-DAY mod copied"
 Get-ChildItem $game -Filter '*.dll' | Where-Object Name -match 'ScriptHook|dinput8' | ForEach-Object { L ("  {0}  {1}" -f $_.Name, $_.Length) }
 Get-ChildItem "$game\scripts" | ForEach-Object { L ("  scripts\{0}  {1}" -f $_.Name, $_.Length) }
-L "DONE. Launch Legacy from Steam, log into the Rockstar Launcher, story mode, press F9."
+L "DONE. Launch Legacy from Steam, log into the Rockstar Launcher, story mode, walk to the yellow Q blip at Jay's and press E."

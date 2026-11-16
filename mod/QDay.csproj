@@ -11,21 +11,49 @@
     <RootNamespace>QDay</RootNamespace>
     <OutputPath>bin</OutputPath>
     <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
-    <CopyLocalLockFileAssemblies>false</CopyLocalLockFileAssemblies>
+    <!-- Copy System.Text.Json and its dependencies to bin so ILRepack.targets can merge them into QDay.dll. -->
+    <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
     <GenerateAssemblyInfo>true</GenerateAssemblyInfo>
     <Nullable>disable</Nullable>
     <WarningLevel>4</WarningLevel>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
 
   <ItemGroup>
     <!-- Reference assemblies let net48 compile without a Windows install -->
     <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" PrivateAssets="all" />
-    <PackageReference Include="ScriptHookVDotNet3" Version="3.6.0" />
-    <PackageReference Include="LemonUI.SHVDN3" Version="2.2.0" />
+    <!-- Merges the NuGet dependencies into QDay.dll after build, see ILRepack.targets -->
+    <PackageReference Include="ILRepack.Lib.MSBuild.Task" Version="2.0.48" PrivateAssets="all" />
+    <!-- Compile against these only: the game provides its own copies. -->
+    <PackageReference Include="ScriptHookVDotNet3" Version="3.6.0" ExcludeAssets="runtime" />
+    <PackageReference Include="System.Text.Json" Version="10.0.14" />
   </ItemGroup>
 
   <ItemGroup>
     <Reference Include="System.Windows.Forms" />
+    <Reference Include="System.Net.Http" />
+    <!-- The animated titles' Atlas Type grid fonts (QDayTitle.cs), embedded like the recorded results below. -->
+    <EmbeddedResource Include="..\recorded\qday_title_gridfont.json;..\recorded\ending_title_gridfont.json" LogicalName="recorded.%(Filename)%(Extension)" />
   </ItemGroup>
+
+  <ItemGroup>
+    <!-- Offline mode answers from these real Atlas results, so they ship inside the DLL.
+         Every qrng_qpu_64q_*.json is a Q-Day run in QDayLibrary; the 12q no-bytes file stays out. -->
+    <EmbeddedResource Include="..\recorded\graph_fake_*.json;..\recorded\qrng_qpu_64q_*.json;..\recorded\lockdown_*.json;..\recorded\entanglement_lut.bin;lockdown_districts.json" LogicalName="recorded.%(Filename)%(Extension)" />
+    <!-- The force field's QPAM light frames, baked by tools/bake_qpam_light.py; ForceFieldGame writes them next to the script and loads them as a runtime texture. -->
+    <EmbeddedResource Include="..\recorded\forcefield_light\light_*.png" LogicalName="forcefield.%(Filename)%(Extension)" />
+    <!-- Replacement textures for TextureSwap, read with TextureSwap.GetEmbeddedTexture. -->
+    <EmbeddedResource Include="..\recorded\qday_textures_mild\*.dds;..\recorded\getaway_livery\qblur_livery.dds" LogicalName="textures.%(Filename)%(Extension)" />
+  </ItemGroup>
+
+  <!-- Copy the merged DLL into the game after every build when GameDir is set, usually in the
+       gitignored QDay.csproj.user (MSBuild imports it automatically):
+         <Project><PropertyGroup><GameDir>C:\path\to\Grand Theft Auto V</GameDir></PropertyGroup></Project>
+       SHVDN loads a shadow copy, so this works with the game running; press Insert to reload. -->
+  <Target Name="DeployToGame" AfterTargets="ILRepackDependencies" Condition="'$(GameDir)' != ''">
+    <Copy SourceFiles="$(OutputPath)$(TargetName).dll;$(OutputPath)$(TargetName).pdb"
+          DestinationFolder="$(GameDir)\scripts" SkipUnchangedFiles="true" />
+    <Message Importance="high" Text="Deployed $(TargetName).dll to $(GameDir)\scripts" />
+  </Target>
 
 </Project>

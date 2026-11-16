@@ -1,49 +1,50 @@
 # Q-DAY
 
-A mission for GTA V, built with Claude Code. You help Lester build a quantum computer, it breaks the world's encryption, money stops existing and Los Santos turns on itself.
+A mission for GTA V Legacy or Enhanced. You help Jay build a quantum computer, it breaks the world's encryption, money stops existing and Los Santos turns on itself.
 
 The quantum computer is real: every error rate on screen comes from an Atlas job, and Q-Day itself is a job on IBM quantum hardware whose random numbers decide how the riot plays out.
 
-**Read first:** the overview doc (story, how Atlas is used, what's real and what's dramatised): https://claude.ai/artifact/H8a1vmAToKfQ4RwBYN83W7
+## Requirements
 
-## What's in here
+- ScriptHookV: http://www.dev-c.com/gtav/scripthookv/
+- *Legacy*:
+    - ScriptHookVDotNet: https://github.com/scripthookvdotnet/scripthookvdotnet
+- *Enhanced*:
+    - ScriptHookVDotNetEnhanced: https://github.com/Chiheb-Bacha/ScriptHookVDotNetEnhanced
+    - DirectStorageFix: https://www.gta5-mods.com/scripts/directstoragefix
 
-| Folder | What it is |
-| --- | --- |
-| `mod/` | The mission itself. `QDay.cs` is all the game code (C#, ScriptHookVDotNet 3). `bin/QDay.dll` is the built copy that goes in the game. `locations.json` holds the map positions. |
-| `sidecar/` | The helper program that talks to Atlas. The game writes a request file, the helper runs the job and writes the result back. It holds the Atlas key so the game never does. |
-| `recorded/` | Real Atlas results saved on 21 Oct 2026. Used when there is no key or Atlas is slow. |
-| `setup/` | How to set up a Windows PC: `WINDOWS_SETUP.md` (start here), plus the two install scripts. |
-| `log/` | Working notes from testing. `MORNING.md` is the running log of what broke and why. |
-| `tools/remote-box/` | Scripts used to drive a cloud PC from a Mac. You won't need these. |
-| `PLAN.md` | The original plan and design notes (21 Oct). Some early details have since changed; the code is the source of truth. |
-| `CLAUDE.md` | Instructions for Claude Code when it works in this repo. |
+## Installation
 
-## Play it or work on it
-You need a Windows PC with GTA V Legacy. Follow `setup/WINDOWS_SETUP.md`. The two things that catch people out:
-- **BattlEye must be off** in the Rockstar launcher and Steam needs `-nobattleye`, or the game crashes on start.
-- **ScriptHookVDotNet must be 3.7.0 nightly or newer.** 3.6.0 loads but the mission fails to start.
+Copy the `scripts` folder from this zip into the game folder. You should end up with the three Q-DAY files in your `scripts` folder.
 
-To change the mission, edit `mod/QDay.cs`, rebuild (`dotnet build` in `mod/`), and copy `mod/bin/QDay.dll` into the game's `scripts` folder.
+```
+scripts/
+    QDay.dll
+    QDay.ini
+    QDay.pdb
+```
 
-## Rules
-- Never put the Atlas key in a file. It lives in the `MOTH_API_TOKEN` environment variable.
-- Story mode only. Never open GTA Online with the mod installed.
+## Starting the mission
 
-## Status (3 Nov 2026)
-The mission runs end to end in story mode. The leak ticker now scrolls at a
-constant speed independent of framerate, and the Q-Day riot has been seen for the
-first time: 64 pedestrians armed, where the previous attempt found one. The mod's
-own log finally lands in `scripts\QDay.log`, which also means `QDay.locations.json`
-is read at last — until now the mod silently ran on hardcoded defaults and every
-edit to that file was discarded, so the chip coordinates still need verifying
-in-game before they can be trusted.
+Look for the yellow **Q** blip on the map, labelled Q-DAY. It's a payphone, and you'll hear it ringing as you get close. Walk up to it on foot and press **E** when the prompt appears.
 
-Still to do: the three heists need their own locations, guards and exits; the
-escape (roadblocks, briefcase, plane) is unbuilt; two cutscenes are outstanding.
-Open playtest items are tracked as GitHub issues. Deadline: 19 Nov 2026.
+**The heists.** Jay needs three parts of one machine: a fridge from Humane Labs, a command system from the FIB Building and a chip from Fort Zancudo. After each delivery, Atlas measures how many errors the part makes. Crashing the truck on the way back makes it worse. Each part has to come in under its target, 11%, then 6%, then 2%, or you go back for another one.
 
-Build on any machine with the .NET SDK — the Windows gaming PC is easiest:
-`dotnet build` in `mod/`, copy `bin/QDay.dll` and `locations.json` (as
-`QDay.locations.json`) into `GTAV/scripts/`, then press **F11** in game to reload
-scripts (not Insert).
+**Q-Day.** When Jay first pitches the plan, a real job starts on an IBM quantum computer and runs in the background while you do the heists. Its random numbers decide how the riot plays out.
+
+## Settings
+
+`scripts\QDay.ini`:
+
+```ini
+[General]
+Debug = false
+
+[Atlas]
+ApiKey =
+Offline = false
+```
+
+- **`ApiKey`**: paste your Moth Atlas key after the `=`. With a key, the measurements and the Q-Day job run live on Atlas. Without one, the mission uses real results recorded earlier, so it plays the same either way.
+- **`Offline`**: set to `true` to use the recorded results even when a key is set, for example when your connection is bad.
+- **`Debug`**: set to `true` to turn on debug keys.

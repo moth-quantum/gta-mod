@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Tests the animated titles' timeline, font reading and layout without the game. Links mod/QDayTitleTimeline.cs as
+       a source file and copies the real export beside the tests; it lives outside mod/ so the mod's SDK-style project
+       doesn't glob these files into QDay.dll. Run with: dotnet test tests/QDayTitle.Tests -->
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>disable</Nullable>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="../../mod/QDayTitleTimeline.cs" Link="QDayTitleTimeline.cs" />
+    <None Include="../../recorded/qday_title_gridfont.json" Link="qday_title_gridfont.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../../recorded/ending_title_gridfont.json" Link="ending_title_gridfont.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.11.1" />
+    <PackageReference Include="xunit" Version="2.9.2" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2" />
+  </ItemGroup>
+
+</Project>

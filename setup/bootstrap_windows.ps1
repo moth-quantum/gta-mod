@@ -13,9 +13,8 @@ choco install -y googlechrome steam git python 7zip vcredist-all directx
 # 2. Claude Code (native Windows installer).
 irm https://claude.ai/install.ps1 | iex
 
-# 3. Folders and the bridge path the mod and sidecar share.
+# 3. Work folder (install_loaders.ps1 logs to C:\gta-mod\bridge\install.log).
 New-Item -ItemType Directory -Force C:\gta-mod\bridge | Out-Null
-[Environment]::SetEnvironmentVariable('QDAY_BRIDGE', 'C:\gta-mod\bridge', 'User')
 
 # 4. Loader downloads, used later by setup\install_loaders.ps1.
 $ua = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'
@@ -35,4 +34,4 @@ Get-Content "$ssh\qday_box.pub"
 Write-Host ""
 Write-Host "After the key is added on GitHub, open a NEW PowerShell and run:"
 Write-Host "  git clone git@github.com:moth-quantum/gta-mod.git C:\gta-mod\src"
-Write-Host "Then set the Atlas key: [Environment]::SetEnvironmentVariable('MOTH_API_TOKEN', '<key>', 'User')"
+Write-Host "Optional, for live Atlas: after install_loaders.ps1, set [Atlas] ApiKey in the game's scripts\QDay.ini"

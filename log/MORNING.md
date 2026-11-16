@@ -52,7 +52,7 @@
 
 ## 23 Oct, 13:45–14:05: full run on a 100% save
 - 100% save (libertycity.net file 205368, slot 01 "The Last One") removes the story-mission blocker. Q-DAY runs cleanly in free roam.
-- Captured: title, Lester briefing, Humane Labs wanted level, truck at Lester's "calibrating on Atlas", TOO NOISY 8.5%, Q-Day "Bell S = 2.71 > 2", ticker with commit hash + leaks.
+- Captured: title, Jay briefing, Humane Labs wanted level, truck at Jay's "calibrating on Atlas", TOO NOISY 8.5%, Q-Day "Bell S = 2.71 > 2", ticker with commit hash + leaks.
 - Fixed: ticker was off-screen (SHVDN UI canvas is 1280x720, not the real resolution). Added F8 = teleport to Legion Square.
 - Not yet seen: the riot. Legion Square was empty in the Q-Day storm, so there were no peds to arm. Next: spawn a crowd at Q-Day, or skip the THUNDER weather until peds are armed.
 - Sidecar was not running on Shadow, so the run used recorded results (F6/F7).
@@ -138,3 +138,6 @@ muted, using a combined local build of all five.
   DLL in, press F11. QDay.dll is NOT locked while the game runs. The in-box
   csc.exe is C# 5 only and cannot compile QDay.cs. CLAUDE.md's "build on the Mac"
   is stale.
+
+## 9 Nov: to raise with the platform team
+`entanglement-shader-v1` with style `frustrated` and interaction 25 fails with `Quantum circuit execution failed: Input matrix is not unitary.`, marked non-retryable. Job `5fef5932-8dcd-49db-9c5c-f19f809c9d76`: reflectance 0.45, absorption 0, layers 2, incoming_rays 4, resolution 256. The force field uses style `peaked` instead, so nothing here is waiting on it.

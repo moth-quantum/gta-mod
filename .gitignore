@@ -1,8 +1,12 @@
-sidecar/bridge/
 *.log
 __pycache__/
 .DS_Store
 mod/obj/
+mod/*.user
 mod/bin/*
-!mod/bin/QDay.dll
+tests/*/bin/
+tests/*/obj/
 .deploy/
+textures/
+.venv/
+dist/
