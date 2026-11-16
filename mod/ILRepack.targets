@@ -8,7 +8,7 @@
       <MergedAssemblies Include="@(ReferenceCopyLocalPaths)" Condition="'%(Extension)' == '.dll'" />
       <InputAssemblies Include="$(OutputPath)$(TargetName)$(TargetExt)" />
       <InputAssemblies Include="@(MergedAssemblies)" />
-      <!-- Folders of compile-only references (ScriptHookVDotNet3, LemonUI, net48 facades) so ILRepack can resolve them. -->
+      <!-- Folders of compile-only references (ScriptHookVDotNet3, net48 facades) so ILRepack can resolve them. -->
       <ReferenceDirs Include="@(ReferencePath->'%(RootDir)%(Directory)')" />
     </ItemGroup>
 
