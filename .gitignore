@@ -9,3 +9,4 @@ tests/*/obj/
 .deploy/
 textures/
 .venv/
+dist/
